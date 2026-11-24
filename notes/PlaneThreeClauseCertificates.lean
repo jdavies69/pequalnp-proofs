@@ -5,12 +5,12 @@ import PEqualNP.Outside.L_meta_1485
 On the incidence and quadrangle inputs, a least candidate must distinguish
 the two operands of each AND in both directions. Replacing the gate by either
 operand must actually turn the output on for a rejected quadrangle.
-The circuit deletion and monotonicity lemmas are from L-meta-1485.
-The lemmas doubleStarFlag and doubleStarReject realize every incident point-line
-double star by three clauses. The lemma noncrossingPair excludes every pair
-with both cross incidences absent. Each finite frame certificate rules out one
-three-flag matching via matchingObstruction. The companion exhaustive Python
-calculation checks every matching and every remaining candidate flag family.
+The circuit deletion and monotonicity lemmas are from L-meta-1485. The explicit
+point-pair, line-pair and nonincident-point-line quadrangles come from L-meta-1751.
+The theorem doubleStarClassification characterizes all flag families that can
+be accepted simultaneously by three raw OR clauses while rejecting the 234
+quadrangles. The sharp upper bound is seven flags. This is the geometric part
+of the single-nested-AND circuit problem.
 -/
 namespace QuadSeparation
 open PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity PEqualNP.MetaComplexity.NestedCover
@@ -206,6 +206,7 @@ theorem doubleStarReject (p l : Fin 13) (Q : Finset (Fin 13)) :
     obtain ⟨x,mem,xl⟩ := pointW
     exact kQ x mem xl
 
+
 -- Projective-plane witness quadrangles and their finite checks are from L-meta-1751.
 def TQ (Q : Finset (Fin 13)) : Finset (Fin 13) :=
   Finset.univ.filter (fun v : Fin 13 => ∀ r ∈ Q, r - v ∉ ({0, 1, 3, 9} : Finset (Fin 13)))
@@ -292,58 +293,251 @@ theorem noncrossingPair (e f : Fin 13 × Fin 13) (left : e.1-f.2 ∉ D) (right :
     · exact exposedOn X f onF Q (eq ▸ fw)
   exact ⟨Q,good,hit A he.1 hf.1 va,hit B he.2.1 hf.2.1 vb,hit C he.2.2 hf.2.2 vc⟩
 
-def frame0 : Flags3 := ![(0, 0), (1, 1), (2, 2)]
-def frame0Bank : List (Finset (Fin 13)) := [{0, 1, 2, 5}, {0, 1, 4, 6}, {0, 6, 7, 8}, {2, 4, 5, 6}]
-set_option maxRecDepth 16000 in
-set_option maxHeartbeats 1500000 in
-theorem frame0Checked : certified frame0 frame0Bank := by decide +kernel
 
-def frame1 : Flags3 := ![(0, 0), (1, 1), (2, 12)]
-def frame1Bank : List (Finset (Fin 13)) := [{0, 1, 2, 5}, {5, 6, 7, 11}, {0, 3, 5, 6}, {1, 3, 4, 5}]
-set_option maxRecDepth 16000 in
-set_option maxHeartbeats 1500000 in
-theorem frame1Checked : certified frame1 frame1Bank := by decide +kernel
+set_option synthInstance.maxSize 4096 in
+set_option maxRecDepth 12000 in
+set_option maxHeartbeats 2000000 in
+theorem fourRows (F : Flags3) (i j : Fin 3) (qp ql qr qs : Finset (Fin 13))
+    (good : quadOK qp ∧ quadOK ql ∧ quadOK qr ∧ quadOK qs)
+    (everyP : ∀ v, (F v).1 ∈ qp) (everyL : ∀ v, ∀ x ∈ ql, x-(F v).2 ∉ D)
+    (mixP : (F 0).1 ∈ qr ∧ ∀ x ∈ qr, x-(F i).2 ∉ D)
+    (mixL : (∀ x ∈ qs, x-(F 0).2 ∉ D) ∧ (F j).1 ∈ qs)
+    (A B C : RawClause) (covers : ∀ v, acceptsFlag A (F v) ∧ acceptsFlag B (F v) ∧ acceptsFlag C (F v)) :
+    ∃ Q, quadOK Q ∧ acceptsQuad A Q ∧ acceptsQuad B Q ∧ acceptsQuad C Q := by
+  obtain ⟨a,sa⟩ := selectClause A F (fun v => (covers v).1)
+  obtain ⟨b,sb⟩ := selectClause B F (fun v => (covers v).2.1)
+  obtain ⟨c,sc⟩ := selectClause C F (fun v => (covers v).2.2)
+  have registry : ∀ a b c : Fin 8, ∀ i j : Fin 3,
+      (∀ k ∈ [a,b,c], ∃ v : Fin 3, pickLine k v = false) ∨
+      (∀ k ∈ [a,b,c], ∃ v : Fin 3, pickLine k v = true) ∨
+      (∀ k ∈ [a,b,c], pickLine k 0 = false ∨ pickLine k i = true) ∨
+      (∀ k ∈ [a,b,c], pickLine k 0 = true ∨ pickLine k j = false) := by decide +kernel
+  have finish (Q) (ok : quadOK Q) (hits : ∀ k ∈ [a,b,c], rowHit F k Q) :
+      ∃ R, quadOK R ∧ acceptsQuad A R ∧ acceptsQuad B R ∧ acceptsQuad C R :=
+    ⟨Q,ok,hitClause sa (hits a (by simp)),hitClause sb (hits b (by simp)),hitClause sc (hits c (by simp))⟩
+  rcases registry a b c i j with allP | allL | first | second
+  · apply finish qp good.1
+    intro k mem
+    obtain ⟨v,sel⟩ := allP k mem
+    exact ⟨v,by simp only [sel,Bool.false_eq_true,ite_false]; exact everyP v⟩
+  · apply finish ql good.2.1
+    intro k mem
+    obtain ⟨v,sel⟩ := allL k mem
+    exact ⟨v,by simp only [sel,ite_true]; exact everyL v⟩
+  · apply finish qr good.2.2.1
+    intro k mem
+    rcases first k mem with h | h
+    · exact ⟨0,by simp only [h,Bool.false_eq_true,ite_false]; exact mixP.1⟩
+    · exact ⟨i,by simp only [h,ite_true]; exact mixP.2⟩
+  · apply finish qs good.2.2.2
+    intro k mem
+    rcases second k mem with h | h
+    · exact ⟨0,by simp only [h,ite_true]; exact mixL.1⟩
+    · exact ⟨j,by simp only [h,Bool.false_eq_true,ite_false]; exact mixL.2⟩
 
-def frame2 : Flags3 := ![(0, 0), (1, 1), (3, 2)]
-def frame2Bank : List (Finset (Fin 13)) := [{0, 1, 4, 6}, {0, 3, 5, 6}, {0, 6, 7, 8}, {1, 2, 3, 6}]
-set_option maxRecDepth 16000 in
-set_option maxHeartbeats 1500000 in
-theorem frame2Checked : certified frame2 frame2Bank := by decide +kernel
+def colP (x y z : Fin 13) : Prop := ∃ k : Fin 13, x-k ∈ D ∧ y-k ∈ D ∧ z-k ∈ D
+def colL (x y z : Fin 13) : Prop := ∃ k : Fin 13, k-x ∈ D ∧ k-y ∈ D ∧ k-z ∈ D
+instance (a b c : Fin 13) : Decidable (colP a b c) := by unfold colP; infer_instance
+instance (a b c : Fin 13) : Decidable (colL a b c) := by unfold colL; infer_instance
 
-def frame3 : Flags3 := ![(0, 0), (1, 1), (5, 2)]
-def frame3Bank : List (Finset (Fin 13)) := [{0, 1, 2, 5}, {0, 1, 4, 6}, {0, 3, 5, 6}, {0, 6, 7, 8}]
-set_option maxRecDepth 16000 in
-set_option maxHeartbeats 1500000 in
-theorem frame3Checked : certified frame3 frame3Bank := by decide +kernel
+def fourth : Fin 13 → Fin 13 → Fin 13 := ![
+  ![1, 2, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1],
+  ![2, 2, 5, 0, 6, 2, 2, 2, 4, 0, 5, 2, 4],
+  ![1, 5, 1, 4, 3, 1, 1, 1, 0, 4, 3, 1, 0],
+  ![2, 0, 4, 2, 2, 6, 2, 2, 4, 0, 2, 4, 5],
+  ![1, 6, 3, 2, 1, 0, 1, 0, 1, 2, 3, 1, 1],
+  ![1, 2, 1, 6, 0, 1, 2, 0, 3, 2, 1, 1, 1],
+  ![1, 2, 1, 2, 1, 2, 1, 1, 3, 4, 0, 0, 1],
+  ![1, 2, 1, 2, 0, 0, 1, 1, 1, 8, 1, 2, 3],
+  ![1, 4, 0, 4, 1, 3, 3, 1, 1, 5, 1, 1, 0],
+  ![2, 0, 4, 0, 2, 2, 4, 8, 5, 2, 2, 2, 4],
+  ![1, 5, 3, 2, 3, 1, 0, 1, 1, 2, 1, 0, 1],
+  ![1, 2, 1, 4, 1, 1, 0, 2, 1, 2, 0, 1, 3],
+  ![1, 4, 0, 5, 1, 1, 1, 3, 0, 4, 1, 3, 1]]
 
-def frame4 : Flags3 := ![(0, 0), (1, 1), (5, 5)]
-def frame4Bank : List (Finset (Fin 13)) := [{0, 1, 2, 5}, {0, 3, 5, 6}, {0, 3, 7, 11}, {2, 4, 5, 6}]
-set_option maxRecDepth 16000 in
-set_option maxHeartbeats 1500000 in
-theorem frame4Checked : certified frame4 frame4Bank := by decide +kernel
+def lineAvoid (q r : Fin 13) : Finset (Fin 13) :=
+  Finset.univ.filter fun x => x ∉ D ∧ x-q ∉ D ∧ x-r ∉ D
 
-def frame5 : Flags3 := ![(0, 0), (2, 1), (5, 5)]
-def frame5Bank : List (Finset (Fin 13)) := [{0, 1, 2, 5}, {0, 2, 3, 4}, {0, 3, 5, 6}, {0, 3, 7, 11}]
-set_option maxRecDepth 16000 in
-set_option maxHeartbeats 1500000 in
-theorem frame5Checked : certified frame5 frame5Bank := by decide +kernel
+set_option maxRecDepth 12000 in
+theorem pTable : ∀ q r : Fin 13, ¬colP 0 q r → quadOK {0,q,r,fourth q r} := by decide +kernel
 
-def frame6 : Flags3 := ![(0, 0), (2, 1), (5, 9)]
-def frame6Bank : List (Finset (Fin 13)) := [{0, 1, 2, 5}, {0, 1, 2, 6}, {0, 3, 5, 6}, {0, 3, 6, 7}]
-set_option maxRecDepth 16000 in
-set_option maxHeartbeats 1500000 in
-theorem frame6Checked : certified frame6 frame6Bank := by decide +kernel
+set_option maxRecDepth 12000 in
+theorem lTable : ∀ q r : Fin 13, ¬colL 0 q r → quadOK (lineAvoid q r) := by decide +kernel
 
-def frame7 : Flags3 := ![(0, 0), (2, 1), (8, 5)]
-def frame7Bank : List (Finset (Fin 13)) := [{0, 2, 3, 4}, {0, 3, 5, 8}, {0, 3, 7, 11}, {1, 2, 3, 8}]
-set_option maxRecDepth 16000 in
-set_option maxHeartbeats 1500000 in
-theorem frame7Checked : certified frame7 frame7Bank := by decide +kernel
+def shift (t : Fin 13) (Q : Finset (Fin 13)) := Q.map (Equiv.addRight t).toEmbedding
 
-def frame8 : Flags3 := ![(0, 0), (2, 1), (8, 7)]
-def frame8Bank : List (Finset (Fin 13)) := [{0, 1, 2, 5}, {0, 3, 5, 8}, {0, 5, 6, 9}, {1, 2, 3, 8}]
+theorem shifted {t x : Fin 13} {Q : Finset (Fin 13)} : x ∈ shift t Q ↔ x-t ∈ Q := by
+  constructor
+  · rintro h
+    obtain ⟨v,hv,e⟩ := Finset.mem_map.mp h
+    change v + t = x at e
+    simpa [←e] using hv
+  · intro h
+    exact Finset.mem_map.mpr ⟨x-t,h,by change x-t+t=x; abel⟩
+
+theorem quadShift {t : Fin 13} {Q : Finset (Fin 13)} (good : quadOK Q) : quadOK (shift t Q) := by
+  refine ⟨by simpa [shift] using good.1,fun k => ?_⟩
+  have eq : ((shift t Q).filter fun p => p-k ∈ D) = shift t (Q.filter fun p => p-(k-t) ∈ D) := by
+    ext p; simp only [Finset.mem_filter,shifted]; rw [show p-t-(k-t)=p-k by abel]
+  rw [eq,shift,Finset.card_map]; exact good.2 (k-t)
+
+theorem threePoints (p q r : Fin 13) (notcol : ¬colP p q r) :
+    ∃ Q, quadOK Q ∧ p ∈ Q ∧ q ∈ Q ∧ r ∈ Q := by
+  have norm : ¬colP 0 (q-p) (r-p) := by
+    rintro ⟨k,a,b,c⟩
+    exact notcol ⟨k+p,by rwa [show p-(k+p)=0-k by abel],by rwa [show q-(k+p)=q-p-k by abel],
+      by rwa [show r-(k+p)=r-p-k by abel]⟩
+  have good := pTable _ _ norm
+  exact ⟨_,quadShift (t:=p) good,shifted.mpr (by simp),shifted.mpr (by simp),shifted.mpr (by simp)⟩
+
+theorem threeLines (p q r : Fin 13) (notcol : ¬colL p q r) :
+    ∃ Q, quadOK Q ∧ ∀ x ∈ Q, x-p ∉ D ∧ x-q ∉ D ∧ x-r ∉ D := by
+  have norm : ¬colL 0 (q-p) (r-p) := by
+    rintro ⟨k,a,b,c⟩
+    exact notcol ⟨k+p,by rwa [show k+p-p=k-0 by abel],by rwa [show k+p-q=k-(q-p) by abel],
+      by rwa [show k+p-r=k-(r-p) by abel]⟩
+  refine ⟨_,quadShift (t:=p) (lTable _ _ norm),?_⟩
+  intro x hx
+  have h := (Finset.mem_filter.mp (shifted.mp hx)).2
+  change x-p ∉ D ∧ x-p-(q-p) ∉ D ∧ x-p-(r-p) ∉ D at h
+  rwa [show x-p-(q-p)=x-q by abel,show x-p-(r-p)=x-r by abel] at h
+
+abbrev incidence (p l : Fin 13) : Prop := p-l ∈ D
 set_option maxRecDepth 16000 in
-set_option maxHeartbeats 1500000 in
-theorem frame8Checked : certified frame8 frame8Bank := by decide +kernel
+set_option maxHeartbeats 3000000 in
+theorem uniqueLine : ∀ p q l m : Fin 13, p ≠ q → incidence p l → incidence p m →
+    incidence q l → incidence q m → l = m := by decide +kernel
+
+theorem triangleBad (A B C : RawClause) (p q r l m n : Fin 13)
+    (pl : incidence p l) (qm : incidence q m) (rn : incidence r n)
+    (pm : incidence p m) (_qn : incidence q n) (rl : incidence r l)
+    (pn : ¬ incidence p n) (ql : ¬ incidence q l) (rm : ¬ incidence r m)
+    (on : ∀ e ∈ [(p,l),(q,m),(r,n)], acceptsFlag A e ∧ acceptsFlag B e ∧ acceptsFlag C e) :
+    ∃ Q, quadOK Q ∧ acceptsQuad A Q ∧ acceptsQuad B Q ∧ acceptsQuad C Q := by
+  have pr : p ≠ r := by rintro rfl; contradiction
+  have lm : l ≠ m := by rintro rfl; contradiction
+  have cP : ¬colP p q r := by
+    rintro ⟨k,pk,qk,rk⟩
+    have e := uniqueLine p r k l pr pk pl rk rl
+    exact ql (e ▸ qk)
+  have cL : ¬colL l m n := by
+    rintro ⟨x,xl,xm,xn⟩
+    by_cases e : x = p
+    · exact pn (e ▸ xn)
+    · exact lm (uniqueLine x p l m e xl xm pl pm)
+  obtain ⟨P,hP,pP,qP,rP⟩ := threePoints p q r cP
+  obtain ⟨L,hL,miss⟩ := threeLines l m n cL
+  obtain ⟨szS,goodS,pS,nS⟩ := geo_quad _ _ pn
+  obtain ⟨szT,goodT,qT,lT⟩ := geo_quad _ _ ql
+  let F : Flags3 := ![(p,l),(q,m),(r,n)]
+  apply fourRows F 2 1 P L (Qf p n) (Qf q l) ⟨hP,hL,⟨szS,goodS⟩,⟨szT,goodT⟩⟩
+    (fun v => by fin_cases v <;> first | exact pP | exact qP | exact rP)
+    (fun v x hx => by fin_cases v <;> first | exact (miss x hx).1 | exact (miss x hx).2.1 | exact (miss x hx).2.2)
+    ⟨pS,(Finset.mem_filter.mp nS).2⟩ ⟨(Finset.mem_filter.mp lT).2,qT⟩ A B C
+  intro v
+  apply on
+  fin_cases v <;> simp [F]
+
+
+
+def covered (A B C : RawClause) (p l : Fin 13) : Prop :=
+  incidence p l ∧ acceptsFlag A (p,l) ∧ acceptsFlag B (p,l) ∧ acceptsFlag C (p,l)
+
+def cleanTerm (A B C : RawClause) : Prop :=
+  ∀ Q, quadOK Q → ¬ (acceptsQuad A Q ∧ acceptsQuad B Q ∧ acceptsQuad C Q)
+
+theorem cross (A B C : RawClause) (clean : cleanTerm A B C) {p l q m : Fin 13}
+    (e : covered A B C p l) (f : covered A B C q m) : incidence p m ∨ incidence q l := by
+  by_contra! no
+  obtain ⟨Q,good,accept⟩ := noncrossingPair (p,l) (q,m) no.1 no.2 A B C e.2 f.2
+  exact clean Q good accept
+
+theorem forcedCenter (A B C : RawClause) (clean : cleanTerm A B C)
+    {p l q m : Fin 13} (pq : p ≠ q) (lm : l ≠ m) (pm : incidence p m)
+    (e : covered A B C p l) (f : covered A B C q m) :
+    ∀ r n, covered A B C r n → r = p ∨ n = m := by
+  intro r n g
+  by_contra! off
+  have pr := Ne.symm off.1
+  have mn := Ne.symm off.2
+  have ql : ¬incidence q l := fun h => lm (uniqueLine p q l m pq e.1 pm h f.1)
+  have pn : ¬incidence p n := by
+    intro h
+    rcases cross A B C clean f g with qn | rm
+    · exact mn (uniqueLine p q m n pq pm h f.1 qn)
+    · exact mn (uniqueLine p r m n pr pm h rm g.1)
+  have rl := (cross A B C clean e g).resolve_left pn
+  have rm : ¬incidence r m := fun h => lm (uniqueLine p r l m pr e.1 pm rl h)
+  have qn := (cross A B C clean f g).resolve_right rm
+  obtain ⟨Q,good,accept⟩ := triangleBad A B C p q r l m n e.1 f.1 g.1 pm qn rl pn ql rm (by
+    intro z hz
+    simp only [List.mem_cons,List.not_mem_nil,or_false] at hz
+    rcases hz with rfl | rfl | rfl
+    · exact e.2
+    · exact f.2
+    · exact g.2)
+  exact clean Q good accept
+
+/-- Every incident input accepted by three raw OR clauses lies in one incident
+double star if the conjunction rejects all legal quadrangles. -/
+theorem containedCorner (A B C : RawClause) (clean : cleanTerm A B C) :
+    ∃ p l : Fin 13, incidence p l ∧ ∀ u v, covered A B C u v → u = p ∨ v = l := by
+  classical
+  by_cases two : ∃ p l q m, covered A B C p l ∧ covered A B C q m ∧ p ≠ q ∧ l ≠ m
+  · obtain ⟨p,l,q,m,e,f,pq,lm⟩ := two
+    rcases cross A B C clean e f with pm | ql
+    · exact ⟨p,m,pm,forcedCenter A B C clean pq lm pm e f⟩
+    · exact ⟨q,l,ql,forcedCenter A B C clean pq.symm lm.symm ql f e⟩
+  · by_cases hit : ∃ p l, covered A B C p l
+    · obtain ⟨p,l,e⟩ := hit
+      refine ⟨p,l,e.1,?_⟩
+      intro q m f
+      by_contra! off
+      exact two ⟨p,l,q,m,e,f,off.1.symm,off.2.symm⟩
+    · exact ⟨0,0,by decide,fun u v h => False.elim (hit ⟨u,v,h⟩)⟩
+
+
+def doubleStar (p l : Fin 13) : Finset (Fin 13 × Fin 13) :=
+  Finset.univ.filter fun e => incidence e.1 e.2 ∧ (e.1 = p ∨ e.2 = l)
+
+instance (A B C : RawClause) (p l : Fin 13) : Decidable (covered A B C p l) := by
+  unfold covered acceptsFlag; infer_instance
+
+def positiveFlags (A B C : RawClause) : Finset (Fin 13 × Fin 13) :=
+  Finset.univ.filter fun e => covered A B C e.1 e.2
+
+set_option maxRecDepth 12000 in
+theorem doubleStarSize : ∀ p l : Fin 13, incidence p l → (doubleStar p l).card = 7 := by decide +kernel
+
+/-- A flag family can be simultaneously accepted by a clean three-clause term
+exactly when it is a subset of one of the 52 incident double stars. -/
+theorem doubleStarClassification (S : Finset (Fin 13 × Fin 13)) :
+    (∃ A B C : RawClause, cleanTerm A B C ∧ S ⊆ positiveFlags A B C) ↔
+    ∃ p l : Fin 13, incidence p l ∧ S ⊆ doubleStar p l := by
+  constructor
+  · rintro ⟨A,B,C,clean,sub⟩
+    obtain ⟨p,l,inc,contain⟩ := containedCorner A B C clean
+    refine ⟨p,l,inc,?_⟩
+    intro e em
+    have cov := (Finset.mem_filter.mp (sub em)).2
+    exact Finset.mem_filter.mpr ⟨Finset.mem_univ _,cov.1,contain e.1 e.2 cov⟩
+  · rintro ⟨p,l,inc,sub⟩
+    refine ⟨corner p l,pointsOn l,linesThrough p,fun Q _ => doubleStarReject p l Q,?_⟩
+    intro e em
+    obtain ⟨flag,side⟩ := (Finset.mem_filter.mp (sub em)).2
+    exact Finset.mem_filter.mpr ⟨Finset.mem_univ _,flag,(doubleStarFlag p l e.1 e.2 inc flag).mpr side⟩
+
+theorem atMostSeven (A B C : RawClause) (clean : cleanTerm A B C) :
+    (positiveFlags A B C).card ≤ 7 := by
+  obtain ⟨p,l,inc,cover⟩ := (doubleStarClassification _).mp ⟨A,B,C,clean,Finset.Subset.rfl⟩
+  exact (Finset.card_le_card cover).trans_eq (doubleStarSize p l inc)
+
+theorem sevenAttained : ∃ A B C : RawClause, cleanTerm A B C ∧ (positiveFlags A B C).card = 7 := by
+  have inc : incidence 0 0 := by decide
+  obtain ⟨A,B,C,clean,cover⟩ := (doubleStarClassification (doubleStar 0 0)).mpr ⟨0,0,inc,Finset.Subset.rfl⟩
+  have hi := atMostSeven A B C clean
+  have lo := Finset.card_le_card cover
+  rw [doubleStarSize 0 0 inc] at lo
+  exact ⟨A,B,C,clean,by omega⟩
 
 end QuadSeparation
