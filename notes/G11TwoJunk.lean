@@ -3,10 +3,13 @@ import PEqualNP.Outside.L_meta_1490
 
 /-!
 Two incomparable junk AND gates in an exact-fan-in-two top-form circuit.
-The Boolean value of each gate can be traced along OR wires to its sources.
-The wire evaluator and OR path lemmas come from the project proof L-meta-1490.
-The graph cover bound uses the triangles and five-cycle from R-meta-1597-318.
-When the gate is itself one of the two junk gates, all those sources are inputs.
+The wire evaluator and OR-path lemmas come from L-meta-1490. The graph cover
+argument uses the two triangles and five-cycle from R-meta-1597-318.
+The lemma threeUncovered forces three missing edges in any counterexample.
+The lemmas tripleConstraint and tripleCount leave 204 of 560 possible triples.
+For an arbitrary deleted edge set, coverMaskIff characterizes exactly when
+the remaining graph has a vertex cover of size at most five.
+
 -/
 namespace TwoJunkGeometry
 open PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity.NestedCover PEqualNP.MetaComplexity
@@ -366,6 +369,64 @@ theorem commonAlternatives (ao : IsAO2 n C) (form : TopForm G C) {g h t : ℕ}
     rw [other] at hc
     exact fun x gx hx => makeTop ao top b x (onSide gb gx) (onSide hc hx)
 
+theorem directRead (ao : IsAO2 n C) {j w : ℕ} (mem : j ∈ junk G C)
+    (none : (orN G C \ lam G C).card = 0) (read : OrReaches n C w j) : w = n+j := by
+  by_contra different
+  obtain ⟨_,op,dirty⟩ := junkFacts mem
+  obtain ⟨k,_,rk,ko,jk,_⟩ := lastReader read different
+  have pays := chargedReader ao rk ko jk dirty (andSilent op)
+  have pos := Finset.card_pos.mpr ⟨k,pays⟩
+  omega
+
+theorem directCentreless {t j : ℕ} (top : t ∈ tops G C) (b : Fin 2) (jm : j ∈ junk G C)
+    (direct : opnd C t b = n+j) : t ∈ centreless G C := by
+  obtain ⟨_,op,_⟩ := junkFacts jm
+  have ss : side (n:=n) C t b = ∅ := by
+    change orIn n C (opnd C t b) = ∅
+    rw [direct]; exact andSilent op
+  apply Finset.mem_filter.mpr
+  refine ⟨top,?_⟩
+  fin_cases b
+  · exact Or.inl ss
+  · exact Or.inr ss
+
+theorem uncoveredBoth (ao : IsAO2 n C) (form : TopForm G C) {g h : ℕ} (diff : g ≠ h)
+    (both : junk G C = {g,h}) (inc : ¬ InCone n C g h ∧ ¬ InCone n C h g)
+    (joint : ∃ t ∈ tops G C, InCone n C g t ∧ InCone n C h t)
+    (one : (centreless G C).card = 1) (none : (orN G C \ lam G C).card = 0)
+    {u v : Fin n} (routed : ∃ t ∈ tops G C, ∃ (b : Fin 2) (j : ℕ), (j = g ∨ j = h) ∧
+      gateVal n C t (pairInput u v) = true ∧ OrReaches n C (opnd C t b) j ∧
+      gateVal n C j (pairInput u v) = true) :
+    compatible G C g h ∧ gateVal n C g (pairInput u v) = true ∧ gateVal n C h (pairInput u v) = true := by
+  obtain ⟨t,top,gt,ht⟩ := joint
+  have gm : g ∈ junk G C := by simp [both]
+  have hm : h ∈ junk G C := by simp [both]
+  obtain ⟨b,gb⟩ := liftJunk ao form both inc (Or.inl rfl) top gt
+  obtain ⟨c,hc⟩ := liftJunk ao form both inc (Or.inr rfl) top ht
+  have gd := directRead ao gm none gb
+  have hd := directRead ao hm none hc
+  have neq : c ≠ b := by intro same; subst c; omega
+  have opp : c = 1-b := by fin_cases b <;> fin_cases c <;> first | exact False.elim (neq rfl) | decide
+  have safe : compatible G C g h := by
+    rw [opp] at hc
+    exact fun x gy hy => makeTop ao top b x (onSide gb gy) (onSide hc hy)
+  obtain ⟨a,atop,d,j,who,fires,reads,_⟩ := routed
+  have jm : j ∈ junk G C := by rw [both]; simpa using who
+  have ac := directCentreless atop d jm (directRead ao jm none reads)
+  have tc := directCentreless top b gm gd
+  obtain ⟨only,honly⟩ := Finset.card_eq_one.mp one
+  rw [honly,Finset.mem_singleton] at ac tc
+  have same : a = t := ac.trans tc.symm
+  rw [same] at fires
+  obtain ⟨rt,op,_⟩ := (show t < C.gates.length ∧ (gateAt C t).op = GateOp.and ∧ BelowF G C t by
+    simpa only [tops,gatesWhere,Finset.mem_filter,Finset.mem_range] using top)
+  have on := (andVal ao t rt op _).mp fires
+  have og := on b
+  have oh := on c
+  rw [gd] at og
+  rw [hd] at oh
+  exact ⟨safe,og,oh⟩
+
 abbrev graph11 : SimpleGraph (Fin 11) := edgeGraph 11 [(0, 9), (0, 10), (1, 4), (1, 8), (2, 5), (2, 10), (3, 6), (3, 7), (4, 8), (4, 10), (5, 8), (5, 9), (6, 7), (6, 10), (7, 9), (8, 9)]
 
 /-- The two triangles and five-cycle give the cover lower bound as in R-meta-1597-318. -/
@@ -437,6 +498,670 @@ theorem residualBound [d : DecidableRel graph11.Adj] (C : Circuit) {g h : ℕ} (
   obtain ⟨K,min,Kbound⟩ := residualCover (Ustar graph11 C)
   have card := cover K min
   omega
+
+abbrev Vertex := Fin 11
+abbrev EdgeId := Fin 16
+
+def ends : EdgeId → Vertex × Vertex := ![(0, 9), (0, 10), (1, 4), (1, 8), (2, 5), (2, 10), (3, 6), (3, 7), (4, 8), (4, 10), (5, 8), (5, 9), (6, 7), (6, 10), (7, 9), (8, 9)]
+def undirected (i : EdgeId) : Sym2 Vertex := s((ends i).1,(ends i).2)
+
+def masks : List (Finset EdgeId) := [
+  {0, 2},
+  {2, 4},
+  {0, 6},
+  {2, 6},
+  {3, 6},
+  {4, 6},
+  {1, 7},
+  {2, 7},
+  {3, 7},
+  {4, 7},
+  {6, 8},
+  {7, 8},
+  {2, 12},
+  {3, 12},
+  {4, 12},
+  {8, 12},
+  {0, 1, 5},
+  {1, 3, 5},
+  {1, 4, 5},
+  {2, 3, 8},
+  {1, 2, 9},
+  {2, 5, 9},
+  {1, 3, 10},
+  {3, 4, 10},
+  {4, 8, 10},
+  {0, 1, 11},
+  {0, 4, 11},
+  {4, 5, 11},
+  {2, 9, 11},
+  {6, 7, 12},
+  {1, 6, 13},
+  {5, 6, 13},
+  {6, 11, 13},
+  {1, 12, 13},
+  {0, 7, 14},
+  {5, 7, 14},
+  {7, 11, 14},
+  {0, 12, 14},
+  {0, 3, 15},
+  {3, 5, 15},
+  {0, 8, 15},
+  {1, 5, 8, 9},
+  {1, 8, 9, 10},
+  {5, 12, 13, 14},
+  {11, 12, 13, 14},
+  {5, 8, 9, 15},
+  {3, 10, 11, 15},
+  {8, 9, 10, 11, 15}]
+
+def inside (S : Finset Vertex) (i : EdgeId) : Prop := (ends i).1 ∈ S ∧ (ends i).2 ∈ S
+instance (S : Finset Vertex) (i : EdgeId) : Decidable (inside S i) := by unfold inside; infer_instance
+
+theorem endsAdjacent : ∀ i : EdgeId, graph11.Adj (ends i).1 (ends i).2 := by decide +kernel
+
+
+private def hitMask (x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 : Bool) : Bool :=
+    ((x0 && (x1 && (x4 && x9))) ||
+    ((x1 && (x2 && (x4 && x5))) ||
+    ((x0 && (x3 && (x6 && x9))) ||
+    ((x1 && (x3 && (x4 && x6))) ||
+    ((x1 && (x3 && (x6 && x8))) ||
+    ((x2 && (x3 && (x5 && x6))) ||
+    ((x0 && (x3 && (x7 && x10))) ||
+    ((x1 && (x3 && (x4 && x7))) ||
+    ((x1 && (x3 && (x7 && x8))) ||
+    ((x2 && (x3 && (x5 && x7))) ||
+    ((x3 && (x4 && (x6 && x8))) ||
+    ((x3 && (x4 && (x7 && x8))) ||
+    ((x1 && (x4 && (x6 && x7))) ||
+    ((x1 && (x6 && (x7 && x8))) ||
+    ((x2 && (x5 && (x6 && x7))) ||
+    ((x4 && (x6 && (x7 && x8))) ||
+    ((x0 && (x2 && (x9 && x10))) ||
+    ((x0 && (x1 && (x2 && (x8 && x10)))) ||
+    ((x0 && (x2 && (x5 && x10))) ||
+    ((x1 && (x4 && x8)) ||
+    ((x0 && (x1 && (x4 && x10))) ||
+    ((x1 && (x2 && (x4 && x10))) ||
+    ((x0 && (x1 && (x5 && (x8 && x10)))) ||
+    ((x1 && (x2 && (x5 && x8))) ||
+    ((x2 && (x4 && (x5 && x8))) ||
+    ((x0 && (x5 && (x9 && x10))) ||
+    ((x0 && (x2 && (x5 && x9))) ||
+    ((x2 && (x5 && (x9 && x10))) ||
+    ((x1 && (x4 && (x5 && (x9 && x10)))) ||
+    ((x3 && (x6 && x7)) ||
+    ((x0 && (x3 && (x6 && x10))) ||
+    ((x2 && (x3 && (x6 && x10))) ||
+    ((x3 && (x5 && (x6 && (x9 && x10)))) ||
+    ((x0 && (x6 && (x7 && x10))) ||
+    ((x0 && (x3 && (x7 && x9))) ||
+    ((x2 && (x3 && (x7 && (x9 && x10)))) ||
+    ((x3 && (x5 && (x7 && x9))) ||
+    ((x0 && (x6 && (x7 && x9))) ||
+    ((x0 && (x1 && (x8 && x9))) ||
+    ((x1 && (x2 && (x8 && (x9 && x10)))) ||
+    ((x0 && (x4 && (x8 && x9))) ||
+    ((x0 && (x2 && (x4 && (x8 && x10)))) ||
+    ((x0 && (x4 && (x5 && (x8 && x10)))) ||
+    ((x2 && (x6 && (x7 && (x9 && x10)))) ||
+    ((x5 && (x6 && (x7 && (x9 && x10)))) ||
+    ((x2 && (x4 && (x8 && (x9 && x10)))) ||
+    ((x1 && (x5 && (x8 && x9))) ||
+    (x4 && (x5 && (x8 && (x9 && x10)))))))))))))))))))))))))))))))))))))))))))))))))))
+
+set_option maxRecDepth 16000 in
+set_option maxHeartbeats 2000000 in
+private theorem coverBits : ∀ (x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 : Bool),
+    ((if x0 then (1 : ℕ) else 0) + ((if x1 then (1 : ℕ) else 0) + ((if x2 then (1 : ℕ) else 0) + ((if x3 then (1 : ℕ) else 0) + ((if x4 then (1 : ℕ) else 0) + ((if x5 then (1 : ℕ) else 0) + ((if x6 then (1 : ℕ) else 0) + ((if x7 then (1 : ℕ) else 0) + ((if x8 then (1 : ℕ) else 0) + ((if x9 then (1 : ℕ) else 0) + ((if x10 then (1 : ℕ) else 0) + 0))))))))))) = 6 → hitMask x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 = true := by decide +kernel
+
+set_option maxRecDepth 8000 in
+set_option maxHeartbeats 5000000 in
+theorem sixWitness : ∀ S ∈ (Finset.univ : Finset Vertex).powersetCard 6,
+    ∃ A ∈ masks, ∀ i ∈ A, inside S i := by
+  intro S mem
+  have n := (Finset.mem_powersetCard.mp mem).2
+  have cnt : (∑ i : Vertex, if i ∈ S then (1 : ℕ) else 0) = 6 := by
+    rw [← Finset.card_eq_sum_ite (Finset.subset_univ S)]; exact n
+  simp only [Fin.sum_univ_succ,Finset.univ_eq_empty,Finset.sum_empty] at cnt
+  rw [show (((((((((((0 : Fin 1)).succ).succ).succ).succ).succ).succ).succ).succ).succ).succ = 10 by decide] at cnt
+  rw [show ((((((((((0 : Fin 2)).succ).succ).succ).succ).succ).succ).succ).succ).succ = 9 by decide] at cnt
+  rw [show (((((((((0 : Fin 3)).succ).succ).succ).succ).succ).succ).succ).succ = 8 by decide] at cnt
+  rw [show ((((((((0 : Fin 4)).succ).succ).succ).succ).succ).succ).succ = 7 by decide] at cnt
+  rw [show (((((((0 : Fin 5)).succ).succ).succ).succ).succ).succ = 6 by decide] at cnt
+  rw [show ((((((0 : Fin 6)).succ).succ).succ).succ).succ = 5 by decide] at cnt
+  rw [show (((((0 : Fin 7)).succ).succ).succ).succ = 4 by decide] at cnt
+  rw [show ((((0 : Fin 8)).succ).succ).succ = 3 by decide] at cnt
+  rw [show (((0 : Fin 9)).succ).succ = 2 by decide] at cnt
+  rw [show ((0 : Fin 10)).succ = 1 by decide] at cnt
+
+  have good := coverBits (decide ((0 : Vertex) ∈ S)) (decide ((1 : Vertex) ∈ S)) (decide ((2 : Vertex) ∈ S)) (decide ((3 : Vertex) ∈ S)) (decide ((4 : Vertex) ∈ S)) (decide ((5 : Vertex) ∈ S)) (decide ((6 : Vertex) ∈ S)) (decide ((7 : Vertex) ∈ S)) (decide ((8 : Vertex) ∈ S)) (decide ((9 : Vertex) ∈ S)) (decide ((10 : Vertex) ∈ S)) (by simpa only [decide_eq_true_eq] using cnt)
+  simp only [hitMask,Bool.or_eq_true,Bool.and_eq_true,decide_eq_true_eq] at good
+  rcases good with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h
+  · obtain ⟨v0, v1, v4, v9⟩ := h
+    refine ⟨({0, 2} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v0,v9⟩
+    · exact ⟨v1,v4⟩
+  · obtain ⟨v1, v2, v4, v5⟩ := h
+    refine ⟨({2, 4} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v1,v4⟩
+    · exact ⟨v2,v5⟩
+  · obtain ⟨v0, v3, v6, v9⟩ := h
+    refine ⟨({0, 6} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v0,v9⟩
+    · exact ⟨v3,v6⟩
+  · obtain ⟨v1, v3, v4, v6⟩ := h
+    refine ⟨({2, 6} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v1,v4⟩
+    · exact ⟨v3,v6⟩
+  · obtain ⟨v1, v3, v6, v8⟩ := h
+    refine ⟨({3, 6} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v1,v8⟩
+    · exact ⟨v3,v6⟩
+  · obtain ⟨v2, v3, v5, v6⟩ := h
+    refine ⟨({4, 6} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v2,v5⟩
+    · exact ⟨v3,v6⟩
+  · obtain ⟨v0, v3, v7, v10⟩ := h
+    refine ⟨({1, 7} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v0,v10⟩
+    · exact ⟨v3,v7⟩
+  · obtain ⟨v1, v3, v4, v7⟩ := h
+    refine ⟨({2, 7} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v1,v4⟩
+    · exact ⟨v3,v7⟩
+  · obtain ⟨v1, v3, v7, v8⟩ := h
+    refine ⟨({3, 7} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v1,v8⟩
+    · exact ⟨v3,v7⟩
+  · obtain ⟨v2, v3, v5, v7⟩ := h
+    refine ⟨({4, 7} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v2,v5⟩
+    · exact ⟨v3,v7⟩
+  · obtain ⟨v3, v4, v6, v8⟩ := h
+    refine ⟨({6, 8} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v3,v6⟩
+    · exact ⟨v4,v8⟩
+  · obtain ⟨v3, v4, v7, v8⟩ := h
+    refine ⟨({7, 8} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v3,v7⟩
+    · exact ⟨v4,v8⟩
+  · obtain ⟨v1, v4, v6, v7⟩ := h
+    refine ⟨({2, 12} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v1,v4⟩
+    · exact ⟨v6,v7⟩
+  · obtain ⟨v1, v6, v7, v8⟩ := h
+    refine ⟨({3, 12} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v1,v8⟩
+    · exact ⟨v6,v7⟩
+  · obtain ⟨v2, v5, v6, v7⟩ := h
+    refine ⟨({4, 12} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v2,v5⟩
+    · exact ⟨v6,v7⟩
+  · obtain ⟨v4, v6, v7, v8⟩ := h
+    refine ⟨({8, 12} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl
+    · exact ⟨v4,v8⟩
+    · exact ⟨v6,v7⟩
+  · obtain ⟨v0, v2, v9, v10⟩ := h
+    refine ⟨({0, 1, 5} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v9⟩
+    · exact ⟨v0,v10⟩
+    · exact ⟨v2,v10⟩
+  · obtain ⟨v0, v1, v2, v8, v10⟩ := h
+    refine ⟨({1, 3, 5} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v10⟩
+    · exact ⟨v1,v8⟩
+    · exact ⟨v2,v10⟩
+  · obtain ⟨v0, v2, v5, v10⟩ := h
+    refine ⟨({1, 4, 5} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v10⟩
+    · exact ⟨v2,v5⟩
+    · exact ⟨v2,v10⟩
+  · obtain ⟨v1, v4, v8⟩ := h
+    refine ⟨({2, 3, 8} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v1,v4⟩
+    · exact ⟨v1,v8⟩
+    · exact ⟨v4,v8⟩
+  · obtain ⟨v0, v1, v4, v10⟩ := h
+    refine ⟨({1, 2, 9} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v10⟩
+    · exact ⟨v1,v4⟩
+    · exact ⟨v4,v10⟩
+  · obtain ⟨v1, v2, v4, v10⟩ := h
+    refine ⟨({2, 5, 9} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v1,v4⟩
+    · exact ⟨v2,v10⟩
+    · exact ⟨v4,v10⟩
+  · obtain ⟨v0, v1, v5, v8, v10⟩ := h
+    refine ⟨({1, 3, 10} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v10⟩
+    · exact ⟨v1,v8⟩
+    · exact ⟨v5,v8⟩
+  · obtain ⟨v1, v2, v5, v8⟩ := h
+    refine ⟨({3, 4, 10} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v1,v8⟩
+    · exact ⟨v2,v5⟩
+    · exact ⟨v5,v8⟩
+  · obtain ⟨v2, v4, v5, v8⟩ := h
+    refine ⟨({4, 8, 10} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v2,v5⟩
+    · exact ⟨v4,v8⟩
+    · exact ⟨v5,v8⟩
+  · obtain ⟨v0, v5, v9, v10⟩ := h
+    refine ⟨({0, 1, 11} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v9⟩
+    · exact ⟨v0,v10⟩
+    · exact ⟨v5,v9⟩
+  · obtain ⟨v0, v2, v5, v9⟩ := h
+    refine ⟨({0, 4, 11} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v9⟩
+    · exact ⟨v2,v5⟩
+    · exact ⟨v5,v9⟩
+  · obtain ⟨v2, v5, v9, v10⟩ := h
+    refine ⟨({4, 5, 11} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v2,v5⟩
+    · exact ⟨v2,v10⟩
+    · exact ⟨v5,v9⟩
+  · obtain ⟨v1, v4, v5, v9, v10⟩ := h
+    refine ⟨({2, 9, 11} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v1,v4⟩
+    · exact ⟨v4,v10⟩
+    · exact ⟨v5,v9⟩
+  · obtain ⟨v3, v6, v7⟩ := h
+    refine ⟨({6, 7, 12} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v3,v6⟩
+    · exact ⟨v3,v7⟩
+    · exact ⟨v6,v7⟩
+  · obtain ⟨v0, v3, v6, v10⟩ := h
+    refine ⟨({1, 6, 13} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v10⟩
+    · exact ⟨v3,v6⟩
+    · exact ⟨v6,v10⟩
+  · obtain ⟨v2, v3, v6, v10⟩ := h
+    refine ⟨({5, 6, 13} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v2,v10⟩
+    · exact ⟨v3,v6⟩
+    · exact ⟨v6,v10⟩
+  · obtain ⟨v3, v5, v6, v9, v10⟩ := h
+    refine ⟨({6, 11, 13} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v3,v6⟩
+    · exact ⟨v5,v9⟩
+    · exact ⟨v6,v10⟩
+  · obtain ⟨v0, v6, v7, v10⟩ := h
+    refine ⟨({1, 12, 13} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v10⟩
+    · exact ⟨v6,v7⟩
+    · exact ⟨v6,v10⟩
+  · obtain ⟨v0, v3, v7, v9⟩ := h
+    refine ⟨({0, 7, 14} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v9⟩
+    · exact ⟨v3,v7⟩
+    · exact ⟨v7,v9⟩
+  · obtain ⟨v2, v3, v7, v9, v10⟩ := h
+    refine ⟨({5, 7, 14} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v2,v10⟩
+    · exact ⟨v3,v7⟩
+    · exact ⟨v7,v9⟩
+  · obtain ⟨v3, v5, v7, v9⟩ := h
+    refine ⟨({7, 11, 14} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v3,v7⟩
+    · exact ⟨v5,v9⟩
+    · exact ⟨v7,v9⟩
+  · obtain ⟨v0, v6, v7, v9⟩ := h
+    refine ⟨({0, 12, 14} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v9⟩
+    · exact ⟨v6,v7⟩
+    · exact ⟨v7,v9⟩
+  · obtain ⟨v0, v1, v8, v9⟩ := h
+    refine ⟨({0, 3, 15} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v9⟩
+    · exact ⟨v1,v8⟩
+    · exact ⟨v8,v9⟩
+  · obtain ⟨v1, v2, v8, v9, v10⟩ := h
+    refine ⟨({3, 5, 15} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v1,v8⟩
+    · exact ⟨v2,v10⟩
+    · exact ⟨v8,v9⟩
+  · obtain ⟨v0, v4, v8, v9⟩ := h
+    refine ⟨({0, 8, 15} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl
+    · exact ⟨v0,v9⟩
+    · exact ⟨v4,v8⟩
+    · exact ⟨v8,v9⟩
+  · obtain ⟨v0, v2, v4, v8, v10⟩ := h
+    refine ⟨({1, 5, 8, 9} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl | rfl
+    · exact ⟨v0,v10⟩
+    · exact ⟨v2,v10⟩
+    · exact ⟨v4,v8⟩
+    · exact ⟨v4,v10⟩
+  · obtain ⟨v0, v4, v5, v8, v10⟩ := h
+    refine ⟨({1, 8, 9, 10} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl | rfl
+    · exact ⟨v0,v10⟩
+    · exact ⟨v4,v8⟩
+    · exact ⟨v4,v10⟩
+    · exact ⟨v5,v8⟩
+  · obtain ⟨v2, v6, v7, v9, v10⟩ := h
+    refine ⟨({5, 12, 13, 14} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl | rfl
+    · exact ⟨v2,v10⟩
+    · exact ⟨v6,v7⟩
+    · exact ⟨v6,v10⟩
+    · exact ⟨v7,v9⟩
+  · obtain ⟨v5, v6, v7, v9, v10⟩ := h
+    refine ⟨({11, 12, 13, 14} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl | rfl
+    · exact ⟨v5,v9⟩
+    · exact ⟨v6,v7⟩
+    · exact ⟨v6,v10⟩
+    · exact ⟨v7,v9⟩
+  · obtain ⟨v2, v4, v8, v9, v10⟩ := h
+    refine ⟨({5, 8, 9, 15} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl | rfl
+    · exact ⟨v2,v10⟩
+    · exact ⟨v4,v8⟩
+    · exact ⟨v4,v10⟩
+    · exact ⟨v8,v9⟩
+  · obtain ⟨v1, v5, v8, v9⟩ := h
+    refine ⟨({3, 10, 11, 15} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl | rfl
+    · exact ⟨v1,v8⟩
+    · exact ⟨v5,v8⟩
+    · exact ⟨v5,v9⟩
+    · exact ⟨v8,v9⟩
+  · obtain ⟨v4, v5, v8, v9, v10⟩ := h
+    refine ⟨({8, 9, 10, 11, 15} : Finset EdgeId),by decide +kernel,?_⟩
+    intro i hi
+    simp only [Finset.mem_insert,Finset.mem_singleton] at hi
+    rcases hi with rfl | rfl | rfl | rfl | rfl
+    · exact ⟨v4,v8⟩
+    · exact ⟨v4,v10⟩
+    · exact ⟨v5,v8⟩
+    · exact ⟨v5,v9⟩
+    · exact ⟨v8,v9⟩
+def edgeIds (U : Finset (Sym2 Vertex)) : Finset EdgeId :=
+  Finset.univ.filter fun i => undirected i ∈ U
+
+/-- Every residual vertex cover of size at most five forces one of 48 explicit edge subsets. -/
+theorem smallCoverMask (U : Finset (Sym2 Vertex)) (K : Finset Vertex)
+    (cover : (graph11.deleteEdges ↑U).IsVertexCover (↑K)) (small : K.card ≤ 5) :
+    ∃ A ∈ masks, A ⊆ edgeIds U := by
+  have size : 6 ≤ Kᶜ.card := by rw [Finset.card_compl]; simp; omega
+  obtain ⟨S,sub,six⟩ := Finset.exists_subset_card_eq size
+  obtain ⟨A,am,hit⟩ := sixWitness S (Finset.mem_powersetCard.mpr ⟨Finset.subset_univ _,six⟩)
+  refine ⟨A,am,?_⟩
+  intro i im
+  apply Finset.mem_filter.mpr
+  refine ⟨Finset.mem_univ _,?_⟩
+  by_contra miss
+  have el : s((ends i).1,(ends i).2) ∉ U := miss
+  have covered := cover (SimpleGraph.deleteEdges_adj.mpr ⟨endsAdjacent i,el⟩)
+  obtain ⟨x,y⟩ := hit i im
+  exact covered.elim (Finset.mem_compl.mp (sub x)) (Finset.mem_compl.mp (sub y))
+
+def allowedTriples : Finset (Finset EdgeId) :=
+  ((Finset.univ : Finset EdgeId).powersetCard 3).filter fun U => ∃ A ∈ masks, A ⊆ U
+
+theorem tripleTotal : ((Finset.univ : Finset EdgeId).powersetCard 3).card = 560 := by
+  rw [Finset.card_powersetCard]; decide
+
+theorem allEdgesIndexed : ∀ u v : Vertex, graph11.Adj u v → ∃ i : EdgeId, undirected i = s(u,v) := by decide +kernel
+
+theorem indexInj : Function.Injective undirected := by
+  change ∀ i j : EdgeId, undirected i = undirected j → i = j
+  decide +kernel
+
+theorem edgeIdCard (U : Finset (Sym2 Vertex)) (valid : ∀ e ∈ U, e ∈ graph11.edgeSet) :
+    (edgeIds U).card = U.card := by
+  have eq : (edgeIds U).image undirected = U := by
+    ext e
+    constructor
+    · intro em
+      obtain ⟨i,mem,rfl⟩ := Finset.mem_image.mp em
+      exact (Finset.mem_filter.mp mem).2
+    · induction e using Sym2.inductionOn with
+      | _ u v =>
+        intro em
+        obtain ⟨i,hi⟩ := allEdgesIndexed u v (valid _ em)
+        exact Finset.mem_image.mpr ⟨i,Finset.mem_filter.mpr ⟨Finset.mem_univ _,hi.symm ▸ em⟩,hi⟩
+  exact (Finset.card_image_of_injective _ indexInj).symm.trans (congrArg Finset.card eq)
+
+theorem tripleConstraint [d : DecidableRel graph11.Adj] (C : Circuit) {g h : ℕ}
+    (least : IsLeastAO graph11 C) (form : TopForm graph11 C) (diff : g < h)
+    (both : junk graph11 C = {g,h}) (inc : ¬ InCone 11 C g h ∧ ¬ InCone 11 C h g)
+    (joint : ∃ t ∈ tops graph11 C, InCone 11 C g t ∧ InCone 11 C h t)
+    (budget : 17 + (tops graph11 C \ centreless graph11 C).card + 2 * (centreless graph11 C).card +
+        (orN graph11 C \ lam graph11 C).card ≤ C.size + (Ustar graph11 C).card)
+    (cover : ∀ K : Finset Vertex, IsMinCover (graph11.deleteEdges ↑(Ustar graph11 C)) K →
+      K.card ≤ (tops graph11 C \ centreless graph11 C).card)
+    (short : C.size ≤ 21) (three : (Ustar graph11 C).card = 3) :
+    edgeIds (Ustar graph11 C) ∈ allowedTriples := by
+  obtain ⟨t,ht,gt,ht'⟩ := joint
+  have two := jointCharge least.1 form both (Nat.ne_of_lt diff) inc ht gt ht'
+  obtain ⟨K,hmin,_⟩ := residualCover (Ustar graph11 C)
+  have bound := cover K hmin
+  have A := smallCoverMask _ K hmin.1 (by omega)
+  have card := edgeIdCard (Ustar graph11 C) (fun _ mem => SimpleGraph.mem_edgeFinset.mp (Finset.mem_sdiff.mp mem).1)
+  exact Finset.mem_filter.mpr ⟨Finset.mem_powersetCard.mpr ⟨Finset.subset_univ _,card.trans three⟩,A⟩
+
+/-- Each mask has an explicit five-vertex cover after its edges are removed. -/
+def coversMask (A : Finset EdgeId) (K : Finset Vertex) : Prop :=
+  K.card = 5 ∧ ∀ u v : Vertex, graph11.Adj u v →
+    u ∈ K ∨ v ∈ K ∨ s(u,v) ∈ A.image undirected
+
+instance (A : Finset EdgeId) (K : Finset Vertex) : Decidable (coversMask A K) := by unfold coversMask; infer_instance
+
+set_option maxRecDepth 12000 in
+set_option maxHeartbeats 5000000 in
+theorem eachMaskCover : ∀ A ∈ masks, ∃ K, coversMask A K := by
+  intro A mem
+  simp only [masks,List.mem_cons,List.not_mem_nil,or_false] at mem
+  rcases mem with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact ⟨{3, 5, 7, 8, 10},by decide +kernel⟩
+  · exact ⟨{3, 6, 8, 9, 10},by decide +kernel⟩
+  · exact ⟨{1, 5, 7, 8, 10},by decide +kernel⟩
+  · exact ⟨{0, 5, 7, 8, 10},by decide +kernel⟩
+  · exact ⟨{4, 5, 7, 9, 10},by decide +kernel⟩
+  · exact ⟨{1, 7, 8, 9, 10},by decide +kernel⟩
+  · exact ⟨{2, 4, 6, 8, 9},by decide +kernel⟩
+  · exact ⟨{2, 6, 8, 9, 10},by decide +kernel⟩
+  · exact ⟨{4, 5, 6, 9, 10},by decide +kernel⟩
+  · exact ⟨{1, 6, 8, 9, 10},by decide +kernel⟩
+  · exact ⟨{1, 5, 7, 9, 10},by decide +kernel⟩
+  · exact ⟨{1, 5, 6, 9, 10},by decide +kernel⟩
+  · exact ⟨{2, 3, 8, 9, 10},by decide +kernel⟩
+  · exact ⟨{3, 4, 5, 9, 10},by decide +kernel⟩
+  · exact ⟨{1, 3, 8, 9, 10},by decide +kernel⟩
+  · exact ⟨{1, 3, 5, 9, 10},by decide +kernel⟩
+  · exact ⟨{4, 5, 6, 7, 8},by decide +kernel⟩
+  · exact ⟨{3, 4, 5, 6, 9},by decide +kernel⟩
+  · exact ⟨{3, 4, 6, 8, 9},by decide +kernel⟩
+  · exact ⟨{3, 5, 6, 9, 10},by decide +kernel⟩
+  · exact ⟨{2, 3, 6, 8, 9},by decide +kernel⟩
+  · exact ⟨{0, 5, 6, 7, 8},by decide +kernel⟩
+  · exact ⟨{2, 3, 4, 6, 9},by decide +kernel⟩
+  · exact ⟨{3, 4, 6, 9, 10},by decide +kernel⟩
+  · exact ⟨{1, 3, 6, 9, 10},by decide +kernel⟩
+  · exact ⟨{2, 4, 6, 7, 8},by decide +kernel⟩
+  · exact ⟨{1, 3, 7, 8, 10},by decide +kernel⟩
+  · exact ⟨{0, 4, 6, 7, 8},by decide +kernel⟩
+  · exact ⟨{0, 2, 6, 7, 8},by decide +kernel⟩
+  · exact ⟨{1, 4, 5, 9, 10},by decide +kernel⟩
+  · exact ⟨{2, 4, 7, 8, 9},by decide +kernel⟩
+  · exact ⟨{0, 4, 5, 7, 8},by decide +kernel⟩
+  · exact ⟨{0, 2, 4, 7, 8},by decide +kernel⟩
+  · exact ⟨{2, 3, 4, 8, 9},by decide +kernel⟩
+  · exact ⟨{1, 5, 6, 8, 10},by decide +kernel⟩
+  · exact ⟨{0, 4, 5, 6, 8},by decide +kernel⟩
+  · exact ⟨{0, 2, 4, 6, 8},by decide +kernel⟩
+  · exact ⟨{1, 3, 5, 8, 10},by decide +kernel⟩
+  · exact ⟨{3, 4, 5, 7, 10},by decide +kernel⟩
+  · exact ⟨{0, 4, 5, 6, 7},by decide +kernel⟩
+  · exact ⟨{1, 3, 5, 7, 10},by decide +kernel⟩
+  · exact ⟨{1, 3, 5, 6, 9},by decide +kernel⟩
+  · exact ⟨{1, 2, 3, 6, 9},by decide +kernel⟩
+  · exact ⟨{0, 3, 4, 5, 8},by decide +kernel⟩
+  · exact ⟨{0, 2, 3, 4, 8},by decide +kernel⟩
+  · exact ⟨{0, 1, 5, 6, 7},by decide +kernel⟩
+  · exact ⟨{0, 2, 4, 6, 7},by decide +kernel⟩
+  · exact ⟨{0, 1, 2, 6, 7},by decide +kernel⟩
+
+theorem coverMaskIff (U : Finset (Sym2 Vertex)) :
+    (∃ K : Finset Vertex, (graph11.deleteEdges ↑U).IsVertexCover (↑K) ∧ K.card ≤ 5) ↔
+      ∃ A ∈ masks, A ⊆ edgeIds U := by
+  constructor
+  · rintro ⟨K,hK,sz⟩
+    exact smallCoverMask U K hK sz
+  · rintro ⟨A,am,sub⟩
+    obtain ⟨K,five,cover⟩ := eachMaskCover A am
+    refine ⟨K,?_,five.le⟩
+    intro u v uv
+    obtain ⟨edge,kept⟩ := SimpleGraph.deleteEdges_adj.mp uv
+    rcases cover u v edge with left | right | erased
+    · exact Or.inl left
+    · exact Or.inr right
+    · obtain ⟨i,im,hi⟩ := Finset.mem_image.mp erased
+      have hit := (Finset.mem_filter.mp (sub im)).2
+      exact False.elim (kept (hi ▸ hit))
+set_option maxRecDepth 16000 in
+set_option maxHeartbeats 3000000 in
+theorem tripleCount : allowedTriples.card = 204 := by decide +kernel
 
 /-- A circuit of size at most 21 under the posted hypotheses must leave three or more edges uncovered. -/
 theorem threeUncovered : ∀ (x1 : SimpleGraph (Fin (11 : ℕ))) [_x2 : DecidableRel x1.Adj] (x3 : PEqualNP.CircuitLowerBounds.Circuit) (x4 x5 : ℕ),   x1 = PEqualNP.EdgeOwnership.edgeGraph (11 : ℕ) [((0 : ℕ), (9 : ℕ)), ((0 : ℕ), (10 : ℕ)), ((1 : ℕ), (4 : ℕ)), ((1 : ℕ), (8 : ℕ)), ((2 : ℕ), (5 : ℕ)), ((2 : ℕ), (10 : ℕ)), ((3 : ℕ), (6 : ℕ)), ((3 : ℕ), (7 : ℕ)), ((4 : ℕ), (8 : ℕ)), ((4 : ℕ), (10 : ℕ)), ((5 : ℕ), (8 : ℕ)), ((5 : ℕ), (9 : ℕ)), ((6 : ℕ), (7 : ℕ)), ((6 : ℕ), (10 : ℕ)), ((7 : ℕ), (9 : ℕ)), ((8 : ℕ), (9 : ℕ))] →     PEqualNP.TopForm.IsLeastAO x1 x3 →       PEqualNP.TopForm.TopForm x1 x3 →         have x9 : Finset ℕ := PEqualNP.TopForm.tops x1 x3;         have x10 : Finset ℕ := PEqualNP.TopForm.centreless x1 x3;         have x11 : Finset (Sym2 (Fin (11 : ℕ))) := PEqualNP.TopForm.Ustar x1 x3;         have x12 : ℕ → ℕ → Prop := PEqualNP.EdgeOwnership.InCone (11 : ℕ) x3;         (∀ x13 ∈ x9,             have x15 : Fin (2 : ℕ) → Finset (Fin (11 : ℕ)) := PEqualNP.TopForm.side x3 x13;             (∀ x16 ∈ x15 (0 : Fin (2 : ℕ)), ∀ x18 ∈ x15 (1 : Fin (2 : ℕ)), x1.Adj x16 x18) ∧ ((x15 (0 : Fin (2 : ℕ))).card ≤ (1 : ℕ) ∨ (x15 (1 : Fin (2 : ℕ))).card ≤ (1 : ℕ))) →           (∀ (x14 x15 : Fin (11 : ℕ)), s(x14, x15) ∈ x11 → ∃ x17 ∈ x9, ∃ (x18 : Fin (2 : ℕ)) (x19 : ℕ), (x19 = x4 ∨ x19 = x5) ∧ PEqualNP.EdgeOwnership.gateVal (11 : ℕ) x3 x17 (PEqualNP.EdgeOwnership.pairInput x14 x15) = Bool.true ∧ PEqualNP.CleanedNonEdge.OrReaches (11 : ℕ) x3 (PEqualNP.TopForm.opnd x3 x17 x18) x19 ∧ PEqualNP.EdgeOwnership.gateVal (11 : ℕ) x3 x19 (PEqualNP.EdgeOwnership.pairInput x14 x15) = Bool.true) → (17 : ℕ) + (x9 \ x10).card + (2 : ℕ) * x10.card + (PEqualNP.TopForm.orN x1 x3 \ PEqualNP.TopForm.lam x1 x3).card ≤ x3.size + x11.card → (∀ (x16 : Finset (Fin (11 : ℕ))), PEqualNP.MetaComplexity.NestedCover.IsMinCover (x1.deleteEdges ↑x11) x16 → x16.card ≤ (x9 \ x10).card) → x4 < x5 → PEqualNP.TopForm.junk x1 x3 = {x4, x5} → ¬x12 x4 x5 → ¬x12 x5 x4 → (∃ x21 ∈ x9, x12 x4 x21 ∧ x12 x5 x21) → x3.size ≤ 21 → 3 ≤ x11.card := by
