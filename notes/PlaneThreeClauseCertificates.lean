@@ -1241,3 +1241,93 @@ theorem deskGateCounts : have x1 : Finset (Fin (13 : ℕ)) := {(0 : Fin (13 : �
   exact ⟨ac,fc,by omega,fun eq => ⟨a,b,ab,twelveCase ao count ra rb oa ob ab pos neg eq⟩⟩
 
 end PlaneCircuit
+
+namespace PlaneCircuit
+open QuadSeparation Fin.NatCast
+open scoped Fin.CommRing
+
+def cyclePoint (d : Fin 13) : Fin 12 → Fin 13 :=
+  if d = 0 then ![1, 5, 4, 3, 7, 6, 10, 9, 8, 12, 11, 2] else
+  if d = 1 then ![1, 2, 3, 8, 6, 7, 5, 10, 11, 12, 4, 9] else
+  if d = 3 then ![1, 3, 5, 8, 2, 4, 7, 10, 12, 6, 9, 11] else
+  ![1, 7, 2, 11, 4, 10, 6, 12, 8, 3, 9, 5]
+
+theorem cycles : ∀ d ∈ D, (∀ i : Fin 12, cyclePoint d i ≠ 0 ∧
+      incidence (cyclePoint d i) (cyclePoint d (i+1)-d)) ∧
+      ∀ v : Fin 13, v ≠ 0 → ∃ i : Fin 12, cyclePoint d i = v := by decide +kernel
+
+theorem alongCycle (P : Fin 12 → Prop) (step : ∀ i, P i → P (i+1)) {i : Fin 12} (hi : P i) :
+    ∀ j, P j := by
+  have walk (m : ℕ) : P (i + (m : Fin 12)) := by
+    induction m with
+    | zero => simpa using hi
+    | succ k ih => simpa only [Nat.cast_succ,←add_assoc] using step _ ih
+  intro j
+  have h := walk (j-i).val
+  simpa using h
+
+/-- A cover of the flags outside an incident double star costs at least twelve
+centers. Equality forces the twelve remaining points or the twelve remaining lines. -/
+theorem residualCenters (p l : Fin 13) (inc : incidence p l)
+    (P L : Finset (Fin 13)) (cover : ∀ u v, incidence u v → u ≠ p → v ≠ l → u ∈ P ∨ v ∈ L) :
+    12 ≤ P.card + L.card ∧ (P.card + L.card ≤ 12 →
+      (P = Finset.univ.erase p ∧ L = ∅) ∨ (P = ∅ ∧ L = Finset.univ.erase l)) := by
+  let d := p-l
+  let M := (Finset.univ : Finset (Fin 13)).erase p
+  let T := shift d L
+  have memT (u : Fin 13) : u ∈ T ↔ u-d ∈ L := shifted
+  have matching : M ⊆ P ∪ T := by
+    intro u hu
+    have diff := (Finset.mem_erase.mp hu).1
+    have line : u-d ≠ l := by intro e; apply diff; dsimp [d] at e; linear_combination e
+    have ed : incidence u (u-d) := by unfold incidence; rwa [show u-(u-d)=d by abel]
+    rcases cover u _ ed diff line with a | b
+    · exact Finset.mem_union_left _ a
+    · exact Finset.mem_union_right _ ((memT _).mpr b)
+  have mc : M.card = 12 := by simp [M]
+  have tc : T.card = L.card := Finset.card_map _ 
+  have lower := Finset.card_le_card matching
+  have union := Finset.card_union_le P T
+  refine ⟨by omega,fun small => ?_⟩
+  have eq : M = P ∪ T := Finset.eq_of_subset_of_card_le matching (by omega)
+  have dis : Disjoint P T := Finset.card_union_eq_card_add_card.mp (by omega)
+  have pc : P ⊆ M := eq ▸ Finset.subset_union_left
+  have lc : T ⊆ M := eq ▸ Finset.subset_union_right
+  have mcT : ∀ u ∈ M, u ∉ P → u ∈ T := fun u hu no => (Finset.mem_union.mp (matching hu)).resolve_left no
+  have step (u v : Fin 13) (um : u ∈ M) (vm : v ∈ M) (uv : incidence u (v-d)) (ut : u ∈ T) : v ∈ T := by
+    have ul : u ≠ p := (Finset.mem_erase.mp um).1
+    have vl : v-d ≠ l := by intro e; apply (Finset.mem_erase.mp vm).1; dsimp [d] at e; linear_combination e
+    have no : u ∉ P := fun up => Finset.disjoint_left.mp dis up ut
+    exact (memT _).mpr ((cover u _ uv ul vl).resolve_left no)
+  rcases T.eq_empty_or_nonempty with empty | ⟨u,ut⟩
+  · left
+    have le : L = ∅ := Finset.card_eq_zero.mp (by rw [empty,Finset.card_empty] at tc; omega)
+    exact ⟨by simpa [empty] using eq.symm,le⟩
+  · have trans (i : Fin 12) : cyclePoint d i+p ∈ M := by
+      apply Finset.mem_erase.mpr; refine ⟨?_,Finset.mem_univ _⟩
+      have no := ((cycles d inc).1 i).1
+      simpa using no
+    have start : u-p ≠ 0 := sub_ne_zero.mpr (Finset.mem_erase.mp (lc ut)).1
+    obtain ⟨i,initial⟩ := (cycles d inc).2 _ start
+    have init : cyclePoint d i+p ∈ T := by simpa [initial] using ut
+    have all : ∀ i : Fin 12, cyclePoint d i+p ∈ T := by
+      apply alongCycle (fun k => cyclePoint d k+p ∈ T) _ init
+      intro k before
+      apply step _ _ (trans k) (trans (k+1)) _ before
+      have e := ((cycles d inc).1 k).2
+      unfold incidence at e ⊢
+      rwa [show cyclePoint d k + p - (cyclePoint d (k+1) + p - d) =
+                 cyclePoint d k - (cyclePoint d (k+1)-d) by abel]
+    have mt : M ⊆ T := by
+      intro w wm
+      obtain ⟨k,hk⟩ := (cycles d inc).2 _ (sub_ne_zero.mpr (Finset.mem_erase.mp wm).1)
+      simpa [hk] using all k
+    have ep : P = ∅ := Finset.eq_empty_iff_forall_notMem.mpr (fun x hx => Finset.disjoint_left.mp dis hx (mt (pc hx)))
+    right; refine ⟨ep,?_⟩
+    ext v
+    have tr : v+d ∈ T ↔ v ∈ L := by simpa using memT (v+d)
+    rw [←tr,Finset.Subset.antisymm lc mt]
+    simp only [M,Finset.mem_erase,Finset.mem_univ,and_true]
+    constructor <;> intro ne e <;> apply ne <;> dsimp [d] at * <;> linear_combination e
+
+end PlaneCircuit
