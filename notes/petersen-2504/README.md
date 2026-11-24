@@ -10,6 +10,6 @@ From a clone of this branch with its pinned Lean toolchain and Mathlib installed
 sh notes/petersen-2504/check-certificate.sh
 ```
 
-The script first builds the upstream verifier, checks the data and the circuit argument, then checks every segment and assembles the final theorems. The last two lines report their axiom dependencies. Allow time for the segment checks.
+The script first builds the upstream verifier, checks the data and the circuit argument, then checks every segment and assembles the final theorems. The last two lines report their axiom dependencies. The checker uses Python 3 to compile each segment in smaller units and bound peak memory. Allow time for the segment checks.
 
 The verifier for finite circuit searches, the vertex-deletion bounds and the original nine-input chart come from loris-olsem’s merged proof of L-meta-1667 in upstream PR 4332. This certificate supplies the new forest for the OR of inputs 0 and 6, the first-gate argument and the specialization to L-meta-2504.

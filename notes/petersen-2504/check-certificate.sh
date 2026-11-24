@@ -12,13 +12,13 @@ lake env sh -eu -c '
   export LEAN_PATH="$build:$LEAN_PATH"
   check() {
     name=$1
-    lean -j2 -R "$src" -o "$build/$name.olean" "$src/$name.lean"
+    lean -j1 -DElab.async=false -R "$src" -o "$build/$name.olean" "$src/$name.lean"
   }
   check DeskForestData
   check ForestBridge
   for file in "$src"/Segment*.lean; do
     name=${file##*/}
-    check "${name%.lean}"
+    python3 "$src/check-segment.py" "$src" "$build" "${name%.lean}"
   done
   check PetersenComplete
 ' sh "$src" "$build"
