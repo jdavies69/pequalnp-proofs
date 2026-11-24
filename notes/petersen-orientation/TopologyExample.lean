@@ -1,0 +1,17 @@
+import ModuleCertificate
+namespace PetersenOrientation.TopologyExample
+open Replay2161 PEqualNP.Outside.L_meta_1667
+def ws : List Word := [0xf0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0,0xff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00,0xffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000,0xffffffff00000000ffffffff00000000ffffffff00000000ffffffff00000000ffffffff00000000ffffffff00000000ffffffff00000000ffffffff00000000,0xffffffffffffffff0000000000000000ffffffffffffffff0000000000000000ffffffffffffffff0000000000000000ffffffffffffffff0000000000000000,0xffffffffffffffffffffffffffffffff00000000000000000000000000000000ffffffffffffffffffffffffffffffff00000000000000000000000000000000,0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000,0xffffffffffffffffaaaaaaaaaaaaaaaaffffffffffffffffaaaaaaaaaaaaaaaaffffffffffffffffaaaaaaaaaaaaaaaaffffffffffffffffaaaaaaaaaaaaaaaa,0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,0xf000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000f000,0xffffffffccccccccffffffffccccccccffffffffccccccccffffffffccccccccffffffffccccccccffffffffccccccccffffffffccccccccffffffffcccccccc]
+def rules : List Witness := [
+  .inr (0,5,⟨![132,4,128,6,160,34]⟩),
+  .inl (160,130),
+  .inl (3,96),
+  .inl (17,80),
+  .inl (6,36),
+  .inl (38,36)]
+def dict : Rows := #[#[0,2414529212322057,14639070685728781,9078015750312973,18087174591225905,5673486576001553,704106201630755,7318768154394659,9747213665206849,1351092236,538448908]]
+theorem signedImpossible : ¬Once graph ws.toFinset := noSigned _ _ rules (by decide +kernel)
+theorem sharedImpossible : ¬Shared graph ws.toFinset := noShared 3 0 (by decide +kernel) (by decide +kernel) ws dict 10 3923191951919440371598798058311214288947638476577764802896 (by decide +kernel)
+theorem circuitImpossible : Impossible graph 11 ws.toFinset := excludeNear (by decide +kernel) signedImpossible sharedImpossible
+end PetersenOrientation.TopologyExample
+#print axioms PetersenOrientation.TopologyExample.circuitImpossible
