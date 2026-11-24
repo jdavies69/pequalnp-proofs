@@ -1,5 +1,6 @@
 import Mathlib
 import PEqualNP.Outside.L_meta_1485
+import PEqualNP.Outside.L_meta_1490
 
 /-!
 On the incidence and quadrangle inputs, a least candidate must distinguish
@@ -10,7 +11,9 @@ point-pair, line-pair and nonincident-point-line quadrangles come from L-meta-17
 The theorem doubleStarClassification characterizes all flag families that can
 be accepted simultaneously by three raw OR clauses while rejecting the 234
 quadrangles. The sharp upper bound is seven flags. This is the geometric part
-of the single-nested-AND circuit problem.
+of the single-nested-AND circuit problem. The circuit results below use the
+OR-path reconstruction from L-meta-1490. The final theorem deskGateCounts
+takes the L-meta-1961 circuit hypotheses verbatim and bounds its AND gates.
 -/
 namespace QuadSeparation
 open PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity PEqualNP.MetaComplexity.NestedCover
@@ -541,3 +544,700 @@ theorem sevenAttained : ∃ A B C : RawClause, cleanTerm A B C ∧ (positiveFlag
   exact ⟨A,B,C,clean,by omega⟩
 
 end QuadSeparation
+namespace QuadSeparation
+
+def cleanTwo (A B : RawClause) : Prop := ∀ Q, quadOK Q → ¬(acceptsQuad A Q ∧ acceptsQuad B Q)
+
+theorem mixedPairBad (A B : RawClause) (e f : Fin 13 × Fin 13) (noncross : e.1-f.2 ∉ D)
+    (ae : acceptsFlag A e) (af : acceptsFlag A f) (be : acceptsFlag B e) (bf : acceptsFlag B f) :
+    ∃ Q, quadOK Q ∧ acceptsQuad A Q ∧ acceptsQuad B Q := by
+  obtain ⟨ps,pg,pe,pf⟩ := geoPP e.1 f.1
+  obtain ⟨ls,lg,le,lf⟩ := geoLL e.2 f.2
+  obtain ⟨ms,mg,me,mf⟩ := geo_quad _ _ noncross
+  let P := QP e.1 f.1
+  let L := QL e.2 f.2
+  let M := Qf e.1 f.2
+  have hit (X : RawClause) (he : acceptsFlag X e) (hf : acceptsFlag X f) :
+      ((acceptsQuad X P ∧ acceptsQuad X L) ∨ (acceptsQuad X P ∧ acceptsQuad X M) ∨
+       (acceptsQuad X L ∧ acceptsQuad X M)) := by
+    rcases he with ep | el <;> rcases hf with fp | fl
+    · exact Or.inr (Or.inl ⟨Or.inl ⟨_,pe,ep⟩,Or.inl ⟨_,me,ep⟩⟩)
+    · exact Or.inl ⟨Or.inl ⟨_,pe,ep⟩,Or.inr ⟨_,fl,(Finset.mem_filter.mp lf).2⟩⟩
+    · exact Or.inl ⟨Or.inl ⟨_,pf,fp⟩,Or.inr ⟨_,el,(Finset.mem_filter.mp le).2⟩⟩
+    · exact Or.inr (Or.inr ⟨Or.inr ⟨_,el,(Finset.mem_filter.mp le).2⟩,Or.inr ⟨_,fl,(Finset.mem_filter.mp mf).2⟩⟩)
+  have ha := hit A ae af
+  have hb := hit B be bf
+  have existsCommon : (acceptsQuad A P ∧ acceptsQuad B P) ∨
+       (acceptsQuad A L ∧ acceptsQuad B L) ∨ (acceptsQuad A M ∧ acceptsQuad B M) := by
+    rcases ha with ⟨pa,la⟩ | ⟨pa,ma⟩ | ⟨la,ma⟩ <;>
+      rcases hb with ⟨pb,lb⟩ | ⟨pb,mb⟩ | ⟨lb,mb⟩ <;>
+      first | exact Or.inl ⟨pa,pb⟩ | exact Or.inr (Or.inl ⟨la,lb⟩) | exact Or.inr (Or.inr ⟨ma,mb⟩)
+  rcases existsCommon with hp | hl | hm
+  · exact ⟨P,⟨ps,pg⟩,hp⟩
+  · exact ⟨L,⟨ls,lg⟩,hl⟩
+  · exact ⟨M,⟨ms,mg⟩,hm⟩
+
+def flagsTwo (A B : RawClause) : Finset (Fin 13 × Fin 13) :=
+  Finset.univ.filter fun e => incidence e.1 e.2 ∧
+      ((A e.1).1 = true ∨ (A e.2).2 = true) ∧ ((B e.1).1 = true ∨ (B e.2).2 = true)
+
+theorem shareCenter (A B : RawClause) (clean : cleanTwo A B) {e f : Fin 13 × Fin 13}
+    (he : e ∈ flagsTwo A B) (hf : f ∈ flagsTwo A B) : e.1 = f.1 ∨ e.2 = f.2 := by
+  by_contra! no
+  obtain ⟨i,a,b⟩ := (Finset.mem_filter.mp he).2
+  obtain ⟨j,c,d⟩ := (Finset.mem_filter.mp hf).2
+  by_cases em : incidence e.1 f.2
+  · have fl : ¬incidence f.1 e.2 := fun h => no.2 (uniqueLine _ _ _ _ no.1 i em h j)
+    obtain ⟨Q,good,yes⟩ := mixedPairBad A B f e fl c a d b
+    exact clean Q good yes
+  · obtain ⟨Q,good,yes⟩ := mixedPairBad A B e f em a c b d
+    exact clean Q good yes
+
+theorem ordinaryStar (A B : RawClause) (clean : cleanTwo A B) :
+    (∃ p : Fin 13, ∀ e ∈ flagsTwo A B, e.1=p) ∨ (∃ l : Fin 13, ∀ e ∈ flagsTwo A B, e.2=l) := by
+  classical
+  by_cases varied : ∃ e ∈ flagsTwo A B, ∃ f ∈ flagsTwo A B, e.1 ≠ f.1
+  · right
+    obtain ⟨e,em,f,fm,ne⟩ := varied
+    have common := (shareCenter A B clean em fm).resolve_left ne
+    refine ⟨e.2,fun z zm => ?_⟩
+    have x := shareCenter A B clean zm em
+    have y := shareCenter A B clean zm fm
+    grind
+  · left
+    by_cases pop : (flagsTwo A B).Nonempty
+    · obtain ⟨e,em⟩ := pop
+      exact ⟨e.1,fun z zm => by by_contra no; exact varied ⟨z,zm,e,em,no⟩⟩
+    · exact ⟨0,fun _ hm => False.elim (pop ⟨_,hm⟩)⟩
+
+end QuadSeparation
+
+namespace QuadSeparation
+
+def containsLines (X : RawClause) (p : Fin 13) : Prop := ∀ k : Fin 13, incidence p k → (X k).2 = true
+
+theorem separatePoints : ∀ p q : Fin 13, p ≠ q → ∃ k : Fin 13, incidence p k ∧ ¬incidence q k := by decide +kernel
+
+theorem saturatedRow (X : RawClause) (p : Fin 13) (full : ∀ l, incidence p l → acceptsFlag X (p,l)) :
+    (X p).1 = true ∨ containsLines X p := by
+  cases bit : (X p).1
+  · exact Or.inr (fun k inc => (full k inc).resolve_left (by simp [bit]))
+  · exact Or.inl rfl
+
+theorem twoLineCoversBad (A B C : RawClause) (p q l : Fin 13) (diff : p ≠ q)
+    (a : containsLines A p) (b : containsLines B p) (c : acceptsFlag C (q,l)) :
+    ∃ Q, quadOK Q ∧ acceptsQuad A Q ∧ acceptsQuad B Q ∧ acceptsQuad C Q := by
+  obtain ⟨k,pk,qk⟩ := separatePoints p q diff
+  have lineHit (Q : Finset (Fin 13)) (missing : k ∈ TQ Q) :
+      acceptsQuad A Q ∧ acceptsQuad B Q :=
+    ⟨Or.inr ⟨k,a k pk,(Finset.mem_filter.mp missing).2⟩,Or.inr ⟨k,b k pk,(Finset.mem_filter.mp missing).2⟩⟩
+  rcases c with qc | lc
+  · obtain ⟨sz,ok,x,miss⟩ := geo_quad _ _ qk
+    have hit := lineHit _ miss
+    exact ⟨_,⟨sz,ok⟩,hit.1,hit.2,Or.inl ⟨_,x,qc⟩⟩
+  · obtain ⟨sz,ok,x,miss⟩ := geoLL l k
+    have hit := lineHit _ miss
+    exact ⟨_,⟨sz,ok⟩,hit.1,hit.2,Or.inr ⟨_,lc,(Finset.mem_filter.mp x).2⟩⟩
+
+def exactLines (X : RawClause) (p : Fin 13) : Prop :=
+  (∀ q, (X q).1 = false) ∧ (∀ k, (X k).2 = true ↔ incidence p k)
+
+theorem forceLineClause (A B C : RawClause) (p q l : Fin 13) (diff : p ≠ q)
+    (clean : cleanTerm A B C) (row : ∀ k, incidence p k →
+       acceptsFlag A (p,k) ∧ acceptsFlag B (p,k) ∧ acceptsFlag C (p,k))
+    (extra : acceptsFlag A (q,l) ∧ acceptsFlag B (q,l) ∧ acceptsFlag C (q,l))
+    (missing : (A p).1 = false) :
+    exactLines A p ∧ (B p).1 = true ∧ (C p).1 = true := by
+  have a := (saturatedRow A p (fun k h => (row k h).1)).resolve_left (by simp [missing])
+  have bp : (B p).1 = true := by
+    apply (saturatedRow B p (fun k h => (row k h).2.1)).resolve_right
+    intro b
+    obtain ⟨Q,g,on⟩ := twoLineCoversBad A B C p q l diff a b extra.2.2
+    exact clean Q g on
+  have cp : (C p).1 = true := by
+    apply (saturatedRow C p (fun k h => (row k h).2.2)).resolve_right
+    intro c
+    obtain ⟨Q,g,aa,cc,bb⟩ := twoLineCoversBad A C B p q l diff a c extra.2.1
+    exact clean Q g ⟨aa,bb,cc⟩
+  have rejects (Q) (g : quadOK Q) (inQ : p ∈ Q) : ¬acceptsQuad A Q :=
+    fun on => clean Q g ⟨on,Or.inl ⟨_,inQ,bp⟩,Or.inl ⟨_,inQ,cp⟩⟩
+  refine ⟨⟨?_,?_⟩,bp,cp⟩
+  · intro u
+    cases bit : (A u).1
+    · rfl
+    · obtain ⟨s,g,hit,other⟩ := geoPP p u
+      exact False.elim (rejects _ ⟨s,g⟩ hit (Or.inl ⟨_,other,bit⟩))
+  · intro k
+    refine ⟨?_,a k⟩
+    intro fires
+    by_contra no
+    obtain ⟨s,g,hit,miss⟩ := geo_quad p k no
+    exact rejects _ ⟨s,g⟩ hit (Or.inr ⟨_,fires,(Finset.mem_filter.mp miss).2⟩)
+
+def purePointsOn (X : RawClause) (l : Fin 13) : Prop :=
+  (∀ k, (X k).2 = false) ∧ (∀ u, (X u).1 = true → incidence u l)
+
+theorem forcePointClause (A B C : RawClause) (p q l : Fin 13) (diff : p ≠ q)
+    (pl : incidence p l) (clean : cleanTerm A B C) (la : containsLines A p)
+    (extraB : acceptsFlag B (q,l)) (extraC : acceptsFlag C (q,l)) (no : (C l).2 = false) :
+    (B l).2 = true ∧ purePointsOn C l := by
+  have cq := extraC.resolve_right (by simp [no])
+  have bl : (B l).2 = true := by
+    cases bit : (B l).2
+    · have bq := extraB.resolve_right (by simp [bit])
+      obtain ⟨k,pk,qk⟩ := separatePoints p q diff
+      obtain ⟨sz,good,on,off⟩ := geo_quad _ _ qk
+      exact False.elim (clean _ ⟨sz,good⟩
+        ⟨Or.inr ⟨_,la k pk,(Finset.mem_filter.mp off).2⟩,Or.inl ⟨_,on,bq⟩,Or.inl ⟨_,on,cq⟩⟩)
+    · rfl
+  have rejects (Q) (g : quadOK Q) (off : l ∈ TQ Q) : ¬acceptsQuad C Q :=
+    fun on => clean Q g ⟨Or.inr ⟨_,la l pl,(Finset.mem_filter.mp off).2⟩,
+      Or.inr ⟨_,bl,(Finset.mem_filter.mp off).2⟩,on⟩
+  refine ⟨bl,?_,?_⟩
+  · intro k
+    cases bit : (C k).2
+    · rfl
+    · obtain ⟨sz,good,off,miss⟩ := geoLL l k
+      exact False.elim (rejects _ ⟨sz,good⟩ off (Or.inr ⟨_,bit,(Finset.mem_filter.mp miss).2⟩))
+  · intro u yes
+    by_contra no
+    obtain ⟨sz,good,on,off⟩ := geo_quad u l no
+    exact rejects _ ⟨sz,good⟩ off (Or.inl ⟨_,on,yes⟩)
+
+end QuadSeparation
+
+/-! The exact-fan-in-two gate semantics and OR-trace facts are from L-meta-1490. -/
+namespace SinglePairShape
+open PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity.NestedCover PEqualNP.MetaComplexity
+open PEqualNP.TopForm PEqualNP.EdgeOwnership PEqualNP.CleanedNonEdge
+open PEqualNP.Outside.L_meta_1490
+attribute [local instance] gateOpDecEq
+variable {n : ℕ} {G : SimpleGraph (Fin n)} [DecidableRel G.Adj] {C : Circuit}
+
+def activeSide (C : Circuit) (g : ℕ) (b : Fin 2) (x : Fin n → Bool) : Prop :=
+  ∃ u ∈ side C g b, x u = true
+
+theorem coneLt {i j : ℕ} (h : InCone n C i j) : i < j := by
+  induction j using Nat.strong_induction_on with
+  | ind j ih =>
+    obtain ⟨_,k,hk,_,rfl|sub⟩ := (inCone_iff n C i j).mp h
+    · exact hk
+    · exact lt_trans (ih k hk sub) hk
+
+theorem operandMem (ao : IsAO2 n C) (g : ℕ) (realG : g < C.gates.length) (b : Fin 2) :
+    opnd C g b ∈ (gateAt C g).inputs := by
+  obtain ⟨p,q,eq⟩ := List.length_eq_two.mp (ao.2.2 _ (gateAt_mem realG))
+  fin_cases b <;> simp [opnd,eq]
+
+theorem andVal (ao : IsAO2 n C) (g : ℕ) (realG : g < C.gates.length)
+    (op : (gateAt C g).op = GateOp.and) (x : Fin n → Bool) :
+    gateVal n C g x = true ↔ ∀ b : Fin 2, val C (List.ofFn x) (opnd C g b) = true := by
+  change val C (List.ofFn x) (n+g) = true ↔ _
+  rw [val_and (by simp : (List.ofFn x).length = n) realG op]
+  constructor
+  · exact fun h b => (h _ (operandMem ao g realG b)).2
+  · intro h i hi
+    refine ⟨ao.2.1 g realG i hi,?_⟩
+    obtain ⟨p,q,eq⟩ := List.length_eq_two.mp (ao.2.2 _ (gateAt_mem realG))
+    simp only [eq,List.mem_cons,List.not_mem_nil,or_false] at hi
+    rcases hi with rfl | rfl
+    · simpa [opnd,eq] using h 0
+    · simpa [opnd,eq] using h 1
+
+
+theorem uniquePair (count : andPairs n C ≤ 1) {a b i j : ℕ}
+    (ra : a < C.gates.length) (rb : b < C.gates.length) (ri : i < C.gates.length) (rj : j < C.gates.length)
+    (oa : (gateAt C a).op = GateOp.and) (ob : (gateAt C b).op = GateOp.and)
+    (oi : (gateAt C i).op = GateOp.and) (oj : (gateAt C j).op = GateOp.and)
+    (ab : InCone n C a b) (ij : InCone n C i j) : a = i ∧ b = j := by
+  unfold andPairs at count
+  have eq : (a,b) = (i,j) := by
+    apply Finset.card_le_one.mp count
+    · exact Finset.mem_filter.mpr ⟨Finset.mem_product.mpr ⟨Finset.mem_range.mpr ra,Finset.mem_range.mpr rb⟩,oa,ob,ab⟩
+    · exact Finset.mem_filter.mpr ⟨Finset.mem_product.mpr ⟨Finset.mem_range.mpr ri,Finset.mem_range.mpr rj⟩,oi,oj,ij⟩
+  exact Prod.mk.inj eq
+
+/-- With one nested pair, the only extra OR source for an AND operand is the
+inner AND, and that source is possible only at the outer AND. -/
+theorem sideForm (ao : IsAO2 n C) {a b j : ℕ} (count : andPairs n C ≤ 1)
+    (ra : a < C.gates.length) (rb : b < C.gates.length) (rj : j < C.gates.length)
+    (oa : (gateAt C a).op = GateOp.and) (ob : (gateAt C b).op = GateOp.and)
+    (oj : (gateAt C j).op = GateOp.and) (ab : InCone n C a b) (d : Fin 2) (x : Fin n → Bool) :
+    val C (List.ofFn x) (opnd C j d) = true ↔ activeSide C j d x ∨
+       j=b ∧ OrReaches n C (opnd C j d) a ∧ gateVal n C a x = true := by
+  have mem := operandMem ao j rj d
+  constructor
+  · intro on
+    obtain ⟨w,path,yes,raw | ⟨k,rk,rfl,nonOR⟩⟩ := or_trace (n:=n) (by simp) _ on
+    · let u : Fin n := ⟨w,raw⟩
+      exact Or.inl ⟨u,reach_mem_orIn u path,(val_ofFn C x u).symm.trans yes⟩
+    · have ok := (ao.1 _ (gateAt_mem rk)).resolve_right nonOR
+      have kj := operand_cone rj mem (ao.2.1 j rj _ mem) path
+      obtain ⟨rfl,rfl⟩ := uniquePair count ra rb rk rj oa ob ok oj ab kj
+      exact Or.inr ⟨rfl,reach_orReaches path _ rfl rk,yes⟩
+  · rintro (⟨u,hu,xu⟩ | ⟨_,read,yes⟩)
+    · exact reach_var_val x _ u (mem_orIn_reach u hu) xu
+    · exact orStep_up (by simp) (orReaches_reach a _ read).1 yes
+
+
+def lit (S : Finset (Fin n)) (x : Fin n → Bool) : Prop := ∃ u ∈ S, x u = true
+
+theorem litUnion (S T : Finset (Fin n)) (x : Fin n → Bool) :
+    lit (S ∪ T) x ↔ lit S x ∨ lit T x := by
+  constructor
+  · rintro ⟨u,um,yes⟩
+    rcases Finset.mem_union.mp um with us | ut
+    · exact Or.inl ⟨u,us,yes⟩
+    · exact Or.inr ⟨u,ut,yes⟩
+  · rintro (⟨u,um,yes⟩ | ⟨u,um,yes⟩)
+    · exact ⟨u,Finset.mem_union_left _ um,yes⟩
+    · exact ⟨u,Finset.mem_union_right _ um,yes⟩
+
+def twoTerm (n : ℕ) (C : Circuit) (j : ℕ) : Prop := ∃ S T : Finset (Fin n),
+  ∀ x, gateVal n C j x = true ↔ lit S x ∧ lit T x
+
+def threeTerm (n : ℕ) (C : Circuit) (j : ℕ) : Prop := ∃ S T U : Finset (Fin n),
+  ∀ x, gateVal n C j x = true ↔ lit S x ∧ lit T x ∧ lit U x
+
+def pairedTerms (n : ℕ) (C : Circuit) (j : ℕ) : Prop := ∃ S T U V : Finset (Fin n),
+  ∀ x, gateVal n C j x = true ↔ (lit S x ∧ lit T x) ∨ (lit U x ∧ lit V x)
+
+theorem formFromSides {a b j : ℕ} (ao : IsAO2 n C) (count : andPairs n C ≤ 1)
+    (ra : a < C.gates.length) (rb : b < C.gates.length) (rj : j < C.gates.length)
+    (oa : (gateAt C a).op = GateOp.and) (ob : (gateAt C b).op = GateOp.and)
+    (oj : (gateAt C j).op = GateOp.and) (ab : InCone n C a b) :
+    ∀ x, gateVal n C j x = true ↔
+      (lit (side C j 0) x ∨ (j = b ∧ OrReaches n C (opnd C j 0) a) ∧ gateVal n C a x = true) ∧
+      (lit (side C j 1) x ∨ (j = b ∧ OrReaches n C (opnd C j 1) a) ∧ gateVal n C a x = true) := by
+  intro x
+  rw [andVal ao j rj oj]
+  have trace := sideForm ao count ra rb rj oa ob oj ab
+  constructor
+  · intro yes
+    constructor
+    · simpa only [and_assoc,lit,activeSide] using (trace 0 x).mp (yes 0)
+    · simpa only [and_assoc,lit,activeSide] using (trace 1 x).mp (yes 1)
+  · rintro ⟨h,k⟩ d
+    have z := (trace 0 x).mpr (by simpa only [and_assoc,lit,activeSide] using h)
+    have o := (trace 1 x).mpr (by simpa only [and_assoc,lit,activeSide] using k)
+    fin_cases d <;> assumption
+
+theorem otherAnd {a b j : ℕ} (ao : IsAO2 n C) (count : andPairs n C ≤ 1)
+    (ra : a < C.gates.length) (rb : b < C.gates.length) (rj : j < C.gates.length)
+    (oa : (gateAt C a).op = GateOp.and) (ob : (gateAt C b).op = GateOp.and)
+    (oj : (gateAt C j).op = GateOp.and) (ab : InCone n C a b) (ordinary : j ≠ b) :
+    twoTerm n C j := by
+  refine ⟨side C j 0,side C j 1,fun x => ?_⟩
+  simpa only [ordinary,false_and,or_false] using formFromSides ao count ra rb rj oa ob oj ab x
+
+theorem outerAndCases {a b : ℕ} (ao : IsAO2 n C) (count : andPairs n C ≤ 1)
+    (ra : a < C.gates.length) (rb : b < C.gates.length)
+    (oa : (gateAt C a).op = GateOp.and) (ob : (gateAt C b).op = GateOp.and)
+    (ab : InCone n C a b) : threeTerm n C b ∨ (∃ S T : Finset (Fin n), ∀ x, gateVal n C b x = true ↔
+        (lit S x ∧ lit T x) ∨ gateVal n C a x = true) := by
+  obtain ⟨A,B,inner⟩ := otherAnd ao count ra rb ra oa ob oa ab (Nat.ne_of_lt (coneLt ab))
+  have outer := formFromSides ao count ra rb rb oa ob ob ab
+  let S := side (n:=n) C b 0
+  let T := side (n:=n) C b 1
+  by_cases left : OrReaches n C (opnd C b 0) a <;> by_cases right : OrReaches n C (opnd C b 1) a
+  · right; refine ⟨S,T,fun x => ?_⟩
+    simp only [outer x,inner x,left,right,true_and]
+    dsimp [S,T]; tauto
+  · left; refine ⟨S ∪ A,S ∪ B,T,fun x => ?_⟩
+    simp only [outer x,inner x,left,right,true_and,false_and,or_false,litUnion]
+    dsimp [S,T]; tauto
+  · left; refine ⟨S,T ∪ A,T ∪ B,fun x => ?_⟩
+    simp only [outer x,inner x,left,right,true_and,false_and,or_false,litUnion]
+    dsimp [S,T]; tauto
+  · left; refine ⟨S,T,T,fun x => ?_⟩
+    simp [outer x,left,right,S,T]
+
+
+theorem outerAnd {a b : ℕ} (ao : IsAO2 n C) (count : andPairs n C ≤ 1)
+    (ra : a < C.gates.length) (rb : b < C.gates.length)
+    (oa : (gateAt C a).op = GateOp.and) (ob : (gateAt C b).op = GateOp.and)
+    (ab : InCone n C a b) : threeTerm n C b ∨ pairedTerms n C b := by
+  rcases outerAndCases ao count ra rb oa ob ab with three | ⟨S,T,eq⟩
+  · exact Or.inl three
+  · obtain ⟨U,V,inner⟩ := otherAnd ao count ra rb ra oa ob oa ab (Nat.ne_of_lt (coneLt ab))
+    exact Or.inr ⟨S,T,U,V,fun x => by rw [eq,inner]⟩
+
+end SinglePairShape
+
+namespace PlaneCircuit
+open PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity.NestedCover PEqualNP.MetaComplexity
+open PEqualNP.TopForm PEqualNP.EdgeOwnership PEqualNP.CleanedNonEdge
+open QuadSeparation SinglePairShape
+attribute [local instance] gateOpDecEq
+
+def flagBits (p l : Fin 13) : Fin 26 → Bool :=
+  Fin.append (fun u : Fin 13 => decide (u=p)) (fun v : Fin 13 => decide (v=l))
+def quadBits (Q : Finset (Fin 13)) : Fin 26 → Bool :=
+  Fin.append (fun u : Fin 13 => decide (u ∈ Q)) (fun v : Fin 13 => decide (∀ p ∈ Q, p-v ∉ D))
+
+theorem flagList (p l : Fin 13) : List.ofFn (flagBits p l) = flagInput p l := List.ofFn_fin_append ..
+theorem quadList (Q : Finset (Fin 13)) : List.ofFn (quadBits Q) = quadInput Q := List.ofFn_fin_append ..
+
+def raw (S : Finset (Fin 26)) : RawClause := fun i =>
+  (decide (Fin.castAdd 13 i ∈ S),decide (Fin.natAdd 13 i ∈ S))
+
+theorem splitLit (S : Finset (Fin 26)) (P L : Fin 13 → Bool) :
+    lit S (Fin.append P L) ↔
+      (∃ u : Fin 13, Fin.castAdd 13 u ∈ S ∧ P u = true) ∨
+      ∃ v : Fin 13, Fin.natAdd 13 v ∈ S ∧ L v = true := by
+  constructor
+  · rintro ⟨i,si,on⟩
+    induction i using (Fin.addCases (m:=13) (n:=13)) with
+    | left u => exact Or.inl ⟨u,si,by simpa only [Fin.append_left,Fin.append_right] using on⟩
+    | right v => exact Or.inr ⟨v,si,by simpa only [Fin.append_left,Fin.append_right] using on⟩
+  · rintro (⟨u,mem,on⟩ | ⟨v,mem,on⟩)
+    · exact ⟨_,mem,by simpa only [Fin.append_left,Fin.append_right] using on⟩
+    · exact ⟨_,mem,by simpa only [Fin.append_left,Fin.append_right] using on⟩
+
+theorem flagLit (S : Finset (Fin 26)) (p l : Fin 13) :
+    lit S (flagBits p l) ↔ acceptsFlag (raw S) (p,l) := by
+  simp [flagBits,splitLit,acceptsFlag,raw]
+
+theorem quadLit (S : Finset (Fin 26)) (Q : Finset (Fin 13)) :
+    lit S (quadBits Q) ↔ acceptsQuad (raw S) Q := by
+  rw [quadBits,splitLit]
+  simp only [acceptsQuad,raw,decide_eq_true_eq]
+  grind
+
+def flags (C : Circuit) (j : ℕ) : Finset (Fin 13 × Fin 13) :=
+  Finset.univ.filter fun e => incidence e.1 e.2 ∧ gateVal 26 C j (flagBits e.1 e.2) = true
+
+def safe (C : Circuit) (j : ℕ) : Prop := ∀ Q, quadOK Q → gateVal 26 C j (quadBits Q) = false
+
+def star (S : Finset (Fin 13 × Fin 13)) : Prop :=
+  (∃ p : Fin 13, ∀ e ∈ S, e.1=p) ∨ (∃ l : Fin 13, ∀ e ∈ S, e.2=l)
+
+theorem threeSub {C : Circuit} {j : ℕ} (form : threeTerm 26 C j) (rejects : safe C j) :
+    ∃ p l, incidence p l ∧ flags C j ⊆ doubleStar p l := by
+  obtain ⟨S,T,U,eq⟩ := form
+  apply (doubleStarClassification _).mp
+  refine ⟨raw S,raw T,raw U,?_,?_⟩
+  · intro Q good accepted
+    have on := (eq (quadBits Q)).mpr ⟨(quadLit _ _).mpr accepted.1,(quadLit _ _).mpr accepted.2.1,(quadLit _ _).mpr accepted.2.2⟩
+    simp [rejects Q good] at on
+  · intro e mem
+    obtain ⟨inc,on⟩ := (Finset.mem_filter.mp mem).2
+    obtain ⟨a,b,c⟩ := (eq _).mp on
+    exact Finset.mem_filter.mpr ⟨Finset.mem_univ _,inc,(flagLit _ _ _).mp a,(flagLit _ _ _).mp b,(flagLit _ _ _).mp c⟩
+
+theorem twoStar {C : Circuit} {j : ℕ} (form : twoTerm 26 C j) (rejects : safe C j) :
+    star (flags C j) := by
+  obtain ⟨S,T,eq⟩ := form
+  have clean : cleanTwo (raw S) (raw T) := by
+    intro Q good on
+    have hit := (eq _).mpr ⟨(quadLit _ _).mpr on.1,(quadLit _ _).mpr on.2⟩
+    simp [rejects Q good] at hit
+  have fe : flags C j = flagsTwo (raw S) (raw T) := by
+    ext e
+    simp only [flags,flagsTwo,Finset.mem_filter,Finset.mem_univ,true_and,eq,flagLit,acceptsFlag]
+  rw [fe]; exact ordinaryStar _ _ clean
+
+theorem twoStars {C : Circuit} {j : ℕ} (form : pairedTerms 26 C j) (rejects : safe C j) :
+    ∃ V W, star V ∧ star W ∧ flags C j = V ∪ W := by
+  obtain ⟨S,T,U,V,eq⟩ := form
+  have neither (Q) (good : quadOK Q) : ¬ ((acceptsQuad (raw S) Q ∧ acceptsQuad (raw T) Q) ∨
+       (acceptsQuad (raw U) Q ∧ acceptsQuad (raw V) Q)) := by
+    simp only [←quadLit,←eq,rejects Q good,Bool.false_eq_true,not_false_eq_true]
+  have one : cleanTwo (raw S) (raw T) := fun Q h a => neither Q h (Or.inl a)
+  have two : cleanTwo (raw U) (raw V) := fun Q h a => neither Q h (Or.inr a)
+  refine ⟨flagsTwo (raw S) (raw T),flagsTwo (raw U) (raw V),ordinaryStar _ _ one,ordinaryStar _ _ two,?_⟩
+  ext e
+  simp only [flags,flagsTwo,Finset.mem_union,Finset.mem_filter,Finset.mem_univ,true_and,eq,flagLit,acceptsFlag]
+  tauto
+
+end PlaneCircuit
+
+namespace PlaneCircuit
+open PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity.NestedCover PEqualNP.MetaComplexity
+open PEqualNP.TopForm PEqualNP.EdgeOwnership PEqualNP.CleanedNonEdge PEqualNP.Outside.L_meta_1490
+open QuadSeparation SinglePairShape
+attribute [local instance] gateOpDecEq
+
+def frontier (C : Circuit) : Finset ℕ :=
+  (Finset.range C.gates.length).filter fun j =>
+    (gateAt C j).op = GateOp.and ∧ OrReaches 26 C C.output j
+
+def planeFlags : Finset (Fin 13 × Fin 13) := Finset.univ.filter fun e => incidence e.1 e.2
+
+def acceptsAll (C : Circuit) := ∀ p l : Fin 13, incidence p l → C.eval (flagInput p l) = true
+def rejectsAll (C : Circuit) := ∀ Q, quadOK Q → C.eval (quadInput Q) = false
+
+theorem frontierSafe {C : Circuit} (neg : rejectsAll C) {j : ℕ} (front : j ∈ frontier C) : safe C j := by
+  intro Q hQ
+  cases yes : gateVal 26 C j (quadBits Q)
+  · rfl
+  · have e := (Finset.mem_filter.mp front).2.2
+    have valOut := orStep_up (by simp : (List.ofFn (quadBits Q)).length = 26)
+      (orReaches_reach j _ e).1 yes
+    change C.eval (List.ofFn (quadBits Q)) = true at valOut
+    simp only [quadList,neg Q hQ] at valOut
+    contradiction
+
+theorem quadActivates (i : Fin 26) : ∃ Q, quadOK Q ∧ quadBits Q i = true := by
+  induction i using (Fin.addCases (m:=13) (n:=13)) with
+  | left p =>
+    obtain ⟨sz,ok,pm,_⟩ := geoPP p p
+    exact ⟨_,⟨sz,ok⟩,by simpa only [quadBits,Fin.append_left,decide_eq_true_eq] using pm⟩
+  | right l =>
+    obtain ⟨sz,ok,lm,_⟩ := geoLL l l
+    exact ⟨_,⟨sz,ok⟩,by simpa only [quadBits,Fin.append_right,decide_eq_true_eq] using (Finset.mem_filter.mp lm).2⟩
+
+theorem frontierCovers {C : Circuit} (ao : IsAO2 26 C) (pos : acceptsAll C) (neg : rejectsAll C) :
+    planeFlags ⊆ (frontier C).biUnion (flags C) := by
+  rintro ⟨p,l⟩ mem
+  have inc := (Finset.mem_filter.mp mem).2
+  have on : val C (List.ofFn (flagBits p l)) C.output = true := by
+    change C.eval (List.ofFn _) = true
+    rw [flagList]; exact pos p l inc
+  obtain ⟨w,path,yes,isRaw | ⟨j,realJ,rfl,nonOR⟩⟩ := or_trace (n:=26) (by simp) _ on
+  · let i : Fin 26 := ⟨w,isRaw⟩
+    obtain ⟨Q,ok,hQ⟩ := quadActivates i
+    have inBit : val C (List.ofFn (quadBits Q)) w = true := (val_ofFn C _ i).trans hQ
+    have bad := orStep_up (by simp : (List.ofFn (quadBits Q)).length = 26) path inBit
+    change C.eval (List.ofFn (quadBits Q)) = true at bad
+    simp only [quadList,neg Q ok] at bad
+    contradiction
+  · have andJ := (ao.1 _ (gateAt_mem realJ)).resolve_right nonOR
+    apply Finset.mem_biUnion.mpr
+    exact ⟨j,Finset.mem_filter.mpr ⟨Finset.mem_range.mpr realJ,andJ,reach_orReaches path _ rfl realJ⟩,
+      Finset.mem_filter.mpr ⟨Finset.mem_univ _,inc,yes⟩⟩
+
+theorem planeSize : planeFlags.card = 52 := by decide +kernel
+theorem pointSize : ∀ p : Fin 13, (planeFlags.filter fun e => e.1 = p).card = 4 := by decide +kernel
+theorem lineSize : ∀ l : Fin 13, (planeFlags.filter fun e => e.2 = l).card = 4 := by decide +kernel
+
+theorem sizeOfStar {S : Finset (Fin 13 × Fin 13)} (valid : S ⊆ planeFlags) (h : star S) : S.card ≤ 4 := by
+  rcases h with ⟨p,all⟩ | ⟨l,all⟩
+  · rw [← pointSize p]; exact Finset.card_le_card (fun e em => Finset.mem_filter.mpr ⟨valid em,all e em⟩)
+  · rw [← lineSize l]; exact Finset.card_le_card (fun e em => Finset.mem_filter.mpr ⟨valid em,all e em⟩)
+
+theorem flagsValid (C : Circuit) (j : ℕ) : flags C j ⊆ planeFlags :=
+  fun _ em => Finset.mem_filter.mpr ⟨Finset.mem_univ _,(Finset.mem_filter.mp em).2.1⟩
+
+theorem countFrontier {C : Circuit} {a b : ℕ} (ao : IsAO2 26 C) (count : andPairs 26 C ≤ 1)
+    (ra : a < C.gates.length) (rb : b < C.gates.length)
+    (oa : (gateAt C a).op = GateOp.and) (ob : (gateAt C b).op = GateOp.and)
+    (ab : InCone 26 C a b) (pos : acceptsAll C) (neg : rejectsAll C) :
+    12 ≤ (frontier C).card ∧ (threeTerm 26 C b → 13 ≤ (frontier C).card) := by
+  let F := frontier C
+  have base : ∀ j ∈ F.erase b, (flags C j).card ≤ 4 := by
+    intro j hj
+    obtain ⟨ne,fm⟩ := Finset.mem_erase.mp hj
+    obtain ⟨real,op,_⟩ := Finset.mem_filter.mp fm
+    exact sizeOfStar (flagsValid _ _) (twoStar
+      (otherAnd ao count ra rb (Finset.mem_range.mp real) oa ob op ab ne) (frontierSafe neg fm))
+  have covered := Finset.card_le_card (frontierCovers ao pos neg)
+  rw [planeSize] at covered
+  have rest := Finset.card_biUnion_le_card_mul (F.erase b) (flags C) 4 base
+  by_cases inside : b ∈ F
+  · have split : F.biUnion (flags C) = flags C b ∪ (F.erase b).biUnion (flags C) := by
+      calc F.biUnion (flags C) = (insert b (F.erase b)).biUnion (flags C) := by rw [Finset.insert_erase inside]
+           _ = _ := Finset.biUnion_insert
+    change 52 ≤ (F.biUnion (flags C)).card at covered
+    rw [split] at covered
+    have union := Finset.card_union_le (flags C b) ((F.erase b).biUnion (flags C))
+    have pop := Finset.card_erase_add_one inside
+    have small (h : threeTerm 26 C b) : (flags C b).card ≤ 7 := by
+      obtain ⟨p,l,inc,sub⟩ := threeSub h (frontierSafe neg inside)
+      exact (Finset.card_le_card sub).trans_eq (doubleStarSize p l inc)
+    have eight : (flags C b).card ≤ 8 := by
+      rcases outerAnd ao count ra rb oa ob ab with h | h
+      · exact (small h).trans (by decide)
+      · obtain ⟨V,W,sv,sw,eq⟩ := twoStars h (frontierSafe neg inside)
+        have val := flagsValid C b
+        rw [eq] at val ⊢
+        have v := sizeOfStar (Finset.Subset.trans Finset.subset_union_left val) sv
+        have w := sizeOfStar (Finset.Subset.trans Finset.subset_union_right val) sw
+        have u := Finset.card_union_le V W; omega
+    change 12 ≤ F.card ∧ (_ → 13 ≤ F.card)
+    exact ⟨by omega,fun h => by have upper := small h; omega⟩
+  · rw [Finset.erase_eq_of_notMem inside] at rest
+    change 52 ≤ (F.biUnion (flags C)).card at covered
+    change 12 ≤ F.card ∧ (_ → 13 ≤ F.card)
+    exact ⟨by omega,fun _ => by omega⟩
+
+end PlaneCircuit
+
+namespace PlaneCircuit
+open PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity.NestedCover PEqualNP.MetaComplexity
+open PEqualNP.TopForm PEqualNP.EdgeOwnership PEqualNP.CleanedNonEdge
+open QuadSeparation SinglePairShape
+attribute [local instance] gateOpDecEq
+
+theorem twelveCase {C : Circuit} {a b : ℕ} (ao : IsAO2 26 C) (count : andPairs 26 C ≤ 1)
+    (ra : a < C.gates.length) (rb : b < C.gates.length)
+    (oa : (gateAt C a).op = GateOp.and) (ob : (gateAt C b).op = GateOp.and)
+    (ab : InCone 26 C a b) (pos : acceptsAll C) (neg : rejectsAll C)
+    (twelve : (frontier C).card = 12) :
+    b ∈ frontier C ∧ a ∉ frontier C ∧ safe C a ∧ (flags C a).card = 4 ∧ (flags C b).card = 8 := by
+  let F := frontier C
+  let R := (F.erase b).biUnion (flags C)
+  have otherBound : R.card ≤ (F.erase b).card * 4 := by
+    apply Finset.card_biUnion_le_card_mul
+    intro j hj
+    obtain ⟨ne,fm⟩ := Finset.mem_erase.mp hj
+    obtain ⟨real,op,_⟩ := Finset.mem_filter.mp fm
+    exact sizeOfStar (flagsValid _ _) (twoStar
+      (otherAnd ao count ra rb (Finset.mem_range.mp real) oa ob op ab ne) (frontierSafe neg fm))
+  have covered := Finset.card_le_card (frontierCovers ao pos neg)
+  rw [planeSize] at covered
+  change 52 ≤ (F.biUnion (flags C)).card at covered
+  change F.card = 12 at twelve
+  have inside : b ∈ F := by
+    by_contra miss
+    unfold R at otherBound
+    rw [Finset.erase_eq_of_notMem miss,twelve] at otherBound
+    omega
+  have pop := Finset.card_erase_add_one inside
+  have cap : R.card ≤ 44 := by omega
+  have split : F.biUnion (flags C) = flags C b ∪ R := by
+    calc F.biUnion (flags C) = (insert b (F.erase b)).biUnion (flags C) := by rw [Finset.insert_erase inside]
+         _ = _ := Finset.biUnion_insert
+  rw [split] at covered
+  have isPair := outerAndCases ao count ra rb oa ob ab
+  obtain ⟨S,T,eq⟩ := isPair.resolve_left (fun three => by
+    have n := (countFrontier ao count ra rb oa ob ab pos neg).2 three
+    change 13 ≤ F.card at n; omega)
+  have sb := frontierSafe neg inside
+  have sa : safe C a := by
+    intro Q good
+    cases bit : gateVal 26 C a (quadBits Q)
+    · rfl
+    · have bad := (eq _).mpr (Or.inr bit)
+      simp [sb Q good] at bad
+  have clean : cleanTwo (raw S) (raw T) := by
+    intro Q good fire
+    have bad := (eq _).mpr (Or.inl ⟨(quadLit _ _).mpr fire.1,(quadLit _ _).mpr fire.2⟩)
+    simp [sb Q good] at bad
+  let V := flagsTwo (raw S) (raw T)
+  have vOK : V ⊆ planeFlags := fun _ em => Finset.mem_filter.mpr ⟨Finset.mem_univ _,(Finset.mem_filter.mp em).2.1⟩
+  have vCard := sizeOfStar vOK (ordinaryStar _ _ clean)
+  have aCard := sizeOfStar (flagsValid C a) (twoStar (otherAnd ao count ra rb ra oa ob oa ab (Nat.ne_of_lt (coneLt ab))) sa)
+  have beq : flags C b = V ∪ flags C a := by
+    ext e; simp only [V,flags,flagsTwo,Finset.mem_union,Finset.mem_filter,Finset.mem_univ,true_and,eq,flagLit,acceptsFlag]
+    tauto
+  have bCard : (flags C b).card ≤ V.card + (flags C a).card := beq ▸ Finset.card_union_le _ _
+  have lim := Finset.card_union_le (flags C b) R
+  have outside : a ∉ F := by
+    intro am
+    have arm : a ∈ F.erase b := Finset.mem_erase.mpr ⟨Nat.ne_of_lt (coneLt ab),am⟩
+    have sub : flags C a ⊆ R := fun _ hm => Finset.mem_biUnion.mpr ⟨a,arm,hm⟩
+    rw [beq,Finset.union_assoc,Finset.union_eq_right.mpr sub] at covered
+    have vlim := Finset.card_union_le V R
+    omega
+  exact ⟨inside,outside,sa,by omega,by omega⟩
+
+def allAnd (C : Circuit) := (Finset.range C.gates.length).filter fun j => (gateAt C j).op = GateOp.and
+
+theorem thirteenAnd {C : Circuit} {a b : ℕ} (ao : IsAO2 26 C) (count : andPairs 26 C ≤ 1)
+    (ra : a < C.gates.length) (rb : b < C.gates.length)
+    (oa : (gateAt C a).op = GateOp.and) (ob : (gateAt C b).op = GateOp.and)
+    (ab : InCone 26 C a b) (pos : acceptsAll C) (neg : rejectsAll C) : 13 ≤ (allAnd C).card := by
+  have sub : frontier C ⊆ allAnd C := by
+    intro j h; obtain ⟨r,op,_⟩ := Finset.mem_filter.mp h; exact Finset.mem_filter.mpr ⟨r,op⟩
+  have base := (countFrontier ao count ra rb oa ob ab pos neg).1
+  by_cases eq : (frontier C).card = 12
+  · have outside := (twelveCase ao count ra rb oa ob ab pos neg eq).2.1
+    have am : a ∈ allAnd C := Finset.mem_filter.mpr ⟨Finset.mem_range.mpr ra,oa⟩
+    have ss : insert a (frontier C) ⊆ allAnd C := Finset.insert_subset am sub
+    have sz := Finset.card_le_card ss
+    rw [Finset.card_insert_of_notMem outside,eq] at sz; exact sz
+  · have sz := Finset.card_le_card sub; omega
+
+end PlaneCircuit
+
+namespace PlaneCircuit
+open PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity.NestedCover PEqualNP.MetaComplexity
+open PEqualNP.TopForm PEqualNP.EdgeOwnership PEqualNP.CleanedNonEdge PEqualNP.Outside.L_meta_1490
+open QuadSeparation SinglePairShape
+attribute [local instance] gateOpDecEq
+
+def outputOr (C : Circuit) := (Finset.range C.gates.length).filter fun j =>
+  (gateAt C j).op = GateOp.or ∧ OrReaches 26 C C.output j
+
+theorem outputTree {C : Circuit} (ao : IsAO2 26 C) : (frontier C).card ≤ (outputOr C).card + 1 := by
+  let F := frontier C
+  let O := outputOr C
+  let inputs := fun k => (gateAt C k).inputs.toFinset
+  have small : ∀ k ∈ O, (inputs k).card ≤ 2 := by
+    intro k mem
+    have len := ao.2.2 _ (gateAt_mem (Finset.mem_range.mp (Finset.mem_filter.mp mem).1))
+    exact (List.toFinset_card_le _).trans_eq len
+  have allInputs := Finset.card_biUnion_le_card_mul O inputs 2 small
+  have sub : (F ∪ O).image (fun j => 26+j) ⊆ insert C.output (O.biUnion inputs) := by
+    intro w mem
+    obtain ⟨j,jm,rfl⟩ := Finset.mem_image.mp mem
+    have reach : OrReaches 26 C C.output j := by
+      rcases Finset.mem_union.mp jm with fj | oj
+      · exact (Finset.mem_filter.mp fj).2.2
+      · exact (Finset.mem_filter.mp oj).2.2
+    rcases Relation.ReflTransGen.cases_tail (orReaches_reach j _ reach).1 with eq | ⟨u,prior,st⟩
+    · exact Finset.mem_insert.mpr (Or.inl eq)
+    · obtain ⟨k,rk,rfl,op,im,_⟩ := st
+      have ko : k ∈ O := Finset.mem_filter.mpr ⟨Finset.mem_range.mpr rk,op,reach_orReaches prior _ rfl rk⟩
+      exact Finset.mem_insert_of_mem (Finset.mem_biUnion.mpr ⟨k,ko,List.mem_toFinset.mpr im⟩)
+  have counts := Finset.card_le_card sub
+  have inj : Function.Injective (fun j : ℕ => 26+j) := fun i j h => Nat.add_left_cancel h
+  rw [Finset.card_image_of_injective _ inj] at counts
+  have dis : Disjoint F O := by
+    apply Finset.disjoint_left.mpr
+    intro j fj oj
+    have p := (Finset.mem_filter.mp fj).2.1
+    have q := (Finset.mem_filter.mp oj).2.1
+    simp [p] at q
+  rw [Finset.card_union_of_disjoint dis] at counts
+  have ins := Finset.card_insert_le C.output (O.biUnion inputs)
+  change F.card ≤ O.card + 1
+  omega
+
+theorem gateBudget (C : Circuit) : (allAnd C).card + (outputOr C).card ≤ C.size := by
+  have dis : Disjoint (allAnd C) (outputOr C) := by
+    apply Finset.disjoint_left.mpr; intro j am om
+    have a := (Finset.mem_filter.mp am).2
+    have o := (Finset.mem_filter.mp om).2.1
+    simp [a] at o
+  rw [←Finset.card_union_of_disjoint dis]
+  have sub : allAnd C ∪ outputOr C ⊆ Finset.range C.gates.length := by
+    intro j m
+    rcases Finset.mem_union.mp m with a | o
+    · exact (Finset.mem_filter.mp a).1
+    · exact (Finset.mem_filter.mp o).1
+  simpa [Circuit.size] using Finset.card_le_card sub
+
+end PlaneCircuit
+
+
+namespace PlaneCircuit
+open PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity.NestedCover PEqualNP.MetaComplexity
+open PEqualNP.TopForm PEqualNP.EdgeOwnership PEqualNP.Outside.L_meta_1490
+open QuadSeparation SinglePairShape
+attribute [local instance] gateOpDecEq
+
+/-- The original L-meta-1961 hypotheses put explicit limits on the number and
+flag coverage of the AND gates visible through output OR wires. -/
+theorem deskGateCounts : have x1 : Finset (Fin (13 : ℕ)) := {(0 : Fin (13 : ℕ)), (1 : Fin (13 : ℕ)), (3 : Fin (13 : ℕ)), (9 : Fin (13 : ℕ))}; have x2 : PEqualNP.CircuitLowerBounds.Circuit → Prop := fun (x2 : PEqualNP.CircuitLowerBounds.Circuit) => (∀ (x3 x4 : Fin (13 : ℕ)), x3 - x4 ∈ x1 → x2.eval ((List.ofFn fun (x6 : Fin (13 : ℕ)) => Decidable.decide (x6 = x3)) ++ List.ofFn fun (x6 : Fin (13 : ℕ)) => Decidable.decide (x6 = x4)) = Bool.true) ∧ ∀ (x3 : Finset (Fin (13 : ℕ))), x3.card = (4 : ℕ) → (∀ (x5 : Fin (13 : ℕ)), {x6 ∈ x3 | x6 - x5 ∈ x1}.card ≤ (2 : ℕ)) → x2.eval ((List.ofFn fun (x6 : Fin (13 : ℕ)) => Decidable.decide (x6 ∈ x3)) ++ List.ofFn fun (x6 : Fin (13 : ℕ)) => Decidable.decide (∀ x7 ∈ x3, x7 - x6 ∉ x1)) = Bool.false; have x3 : PEqualNP.CircuitLowerBounds.Circuit → Prop := fun (x3 : PEqualNP.CircuitLowerBounds.Circuit) => ∃ (x4 : ℕ) (x5 : ℕ), (PEqualNP.MetaComplexity.NestedCover.gateAt x3 x4).op = PEqualNP.CircuitLowerBounds.GateOp.and ∧ (PEqualNP.MetaComplexity.NestedCover.gateAt x3 x5).op = PEqualNP.CircuitLowerBounds.GateOp.and ∧ PEqualNP.EdgeOwnership.InCone (26 : ℕ) x3 x4 x5; ∀ (x4 : PEqualNP.CircuitLowerBounds.Circuit), PEqualNP.MetaComplexity.Monotone2 x4 → PEqualNP.MetaComplexity.NestedCover.ReadsBack (26 : ℕ) x4 → x2 x4 → x4.size < (64 : ℕ) → x3 x4 → (∀ x10 ∈ x4.gates, x10.inputs.length = (2 : ℕ) ∧ x10.inputs.getD (0 : ℕ) (0 : ℕ) ≠ x10.inputs.getD (1 : ℕ) (0 : ℕ)) → PEqualNP.TopForm.andPairs (26 : ℕ) x4 ≤ (1 : ℕ) → 13 ≤ (allAnd x4).card ∧ 12 ≤ (frontier x4).card ∧ (frontier x4).card ≤ 32 ∧
+    ((frontier x4).card = 12 → ∃ a b, InCone 26 x4 a b ∧ b ∈ frontier x4 ∧ a ∉ frontier x4 ∧
+      safe x4 a ∧ (flags x4 a).card = 4 ∧ (flags x4 b).card = 8) := by
+  dsimp only
+  intro C mono back correct small nested strict count
+  obtain ⟨a,b,oa,ob,ab⟩ := nested
+  have rb := ((inCone_iff 26 C a b).mp ab).1
+  have ra := lt_trans (coneLt ab) rb
+  have ao : IsAO2 26 C := ⟨fun g h => (mono g h).1, back,fun g h => (strict g h).1⟩
+  have pos : acceptsAll C := correct.1
+  have neg : rejectsAll C := fun Q h => correct.2 Q h.1 h.2
+  have ac := thirteenAnd ao count ra rb oa ob ab pos neg
+  have fc := (countFrontier ao count ra rb oa ob ab pos neg).1
+  have orc := outputTree ao
+  have all := gateBudget C
+  have sub : frontier C ⊆ allAnd C := by
+    intro z hz; obtain ⟨r,o,_⟩ := Finset.mem_filter.mp hz; exact Finset.mem_filter.mpr ⟨r,o⟩
+  have size := Finset.card_le_card sub
+  exact ⟨ac,fc,by omega,fun eq => ⟨a,b,ab,twelveCase ao count ra rb oa ob ab pos neg eq⟩⟩
+
+end PlaneCircuit
