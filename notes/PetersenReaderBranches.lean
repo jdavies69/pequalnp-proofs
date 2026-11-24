@@ -409,6 +409,72 @@ theorem aliasShape (g : Gate) (ok : NOk g) (a : Acc) (six : 6 ∈ g.inputs)
     rw [hc] at eq; contradiction
 end PetersenReader
 
+namespace PetersenReader
+open PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity PEqualNP.Outside.L_meta_2502
+
+def sensitive (y : Fin 8 → Bool) := y 1 && !graph y && (y 0 || y 3)
+def baseMask (y : Fin 8 → Bool) := ∑ i : Fin 8, if y i then 2 ^ i.val else 0
+
+theorem allSensitive : ∀ y : Fin 8 → Bool,
+    sensitive y = true ↔ baseMask y = 10 ∨ baseMask y = 26 ∨ baseMask y = 74 := by decide +kernel
+
+theorem unchangedAway (y : Fin 8 → Bool) (h : y 1 = true) (i : ℕ) (ne : i ≠ 6) :
+    (pins false y).getD i false = (pins true y).getD i false := by
+  by_cases small : i < 10
+  · interval_cases i <;> first | rfl | contradiction | simpa [pins,h]
+  · rw [List.getD_eq_default _ _ (by change 10 ≤ i; omega),
+        List.getD_eq_default _ _ (by change 10 ≤ i; omega)]
+
+theorem otherPinOff (pre post : List Gate) (k out : ℕ) (g : Gate)
+    (fan : FanInTwo (Circuit.mk (pre ++ g :: post) out))
+    (nr : ∀ h ∈ pre ++ post, reader h = false)
+    (op : g.op = .or) (pair : g.inputs = [6,k] ∨ g.inputs = [k,6])
+    (low : ∀ y, (Circuit.mk (pre ++ g :: post) out).eval (pins false y) = graph y)
+    (high : ∀ y, (Circuit.mk (pre ++ g :: post) out).eval (pins true y) = (graph y || y 0 || y 3))
+    (y : Fin 8 → Bool) (hy : sensitive y = true) :
+    (wiresFrom pre (pins false y)).getD k false = false := by
+  have hs := hy
+  simp only [sensitive,Bool.and_eq_true,Bool.not_eq_true'] at hs
+  obtain ⟨⟨y1,gf⟩,pos⟩ := hs
+  have p : ∀ h ∈ pre, Ok h := fun h hm => fan _ (by simp [hm])
+  have q : ∀ h ∈ post, Ok h := fun h hm => fan _ (by simp [hm])
+  have same := insensitive pre (pins false y) (pins true y) p (fun h hm => nr _ (by simp [hm])) rfl (unchangedAway y y1)
+  have lens : (wiresFrom pre (pins false y)).length = (wiresFrom pre (pins true y)).length := by
+    simp [length_wiresFrom,pins]
+  have highSix : (wiresFrom pre (pins true y)).getD 6 false = true := by
+    obtain ⟨rest,hw,_⟩ := wiresFrom_prefix pre (pins true y)
+    rw [hw,List.getD_append _ _ _ _ (by change 6 < 10; decide)]; rfl
+  by_contra! on
+  have lowOn : (wiresFrom pre (pins false y)).getD k false = true := by cases h : (wiresFrom pre (pins false y)).getD k false <;> simp_all
+  have ge : g.op.eval (g.inputs.map fun i => (wiresFrom pre (pins false y)).getD i false) =
+      g.op.eval (g.inputs.map fun i => (wiresFrom pre (pins true y)).getD i false) := by
+    rcases pair with e|e <;> simp only [op,e,GateOp.eval,List.map_cons,List.map_nil,List.any_cons,List.any_nil,id_eq,lowOn,highSix] <;> simp
+  have sameNext (i : ℕ) (ne : i ≠ 6) :
+      (step (wiresFrom pre (pins false y)) g).getD i false =
+      (step (wiresFrom pre (pins true y)) g).getD i false := by
+    unfold step; rw [ge]
+    by_cases e : i = (wiresFrom pre (pins false y)).length
+    · subst i; rw [getD_snoc_eq,lens,getD_snoc_eq]
+    · rw [getD_snoc_ne _ _ _ _ e,getD_snoc_ne _ _ _ _ (by omega)]; exact same _ ne
+  have eq := insensitive post (step (wiresFrom pre (pins false y)) g) (step (wiresFrom pre (pins true y)) g) q (fun h hm => nr _ (by simp [hm]))
+    (by simp [step,lens]) sameNext out (output_ne_six _ low)
+  have unfoldRun (b : Bool) : wiresFrom post (step (wiresFrom pre (pins b y)) g) =
+      (Circuit.mk (pre ++ g :: post) out).wires (pins b y) := by
+    change _ = wiresFrom (pre ++ g :: post) (pins b y)
+    rw [wiresFrom_append]; rfl
+  rw [unfoldRun,unfoldRun] at eq
+  change (Circuit.mk (pre ++ g :: post) out).eval (pins false y) =
+    (Circuit.mk (pre ++ g :: post) out).eval (pins true y) at eq
+  rw [low,high,gf] at eq
+  simp only [Bool.false_or] at eq
+  rw [pos] at eq
+  contradiction
+
+theorem eligibleInputs : ∀ k : Fin 10,
+    (∀ y : Fin 8 → Bool, sensitive y = true → (pins false y).getD k.val false = false) ↔
+    k.val ∈ ([1,3,4,5,6] : List ℕ) := by decide +kernel
+end PetersenReader
+
 
 namespace PetersenReader
 open PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity
